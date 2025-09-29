@@ -292,8 +292,8 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 
     fn try_from(spanned: IndexedSpan<'fmt, T>) -> Result<Self, Self::Error> {
         Ok(match spanned.span {
-            Span::Text(s) => Span::Text(s),
-            Span::Block(s) => Span::Block(
+            Span::Text(s) => Self::Text(s),
+            Span::Block(s) => Self::Block(
                 A::from_block(s.trim())
                     .map_err(|e| SyntaxError::Ast(e, spanned.offset..spanned.offset + s.len()))?,
             ),
