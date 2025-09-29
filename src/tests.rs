@@ -108,4 +108,25 @@ fn render() {
 
     let ctx: HashMap<&'static str, &'static str> = HashMap::new();
     assert!(template.render(&ctx).is_err());
+
+    let template = BorrowedTemplate::<usize>::compile("{1}, {3}").unwrap();
+    assert_eq!(
+        template
+            .render(&|n: &usize| { Ok::<usize, ()>(*n + 3) })
+            .unwrap(),
+        "4, 6"
+    );
+    let replace = "123".to_owned();
+    assert_eq!(
+        template
+            .render(&|_: &usize| { Ok::<&str, ()>(&replace) })
+            .unwrap(),
+        "123, 123"
+    );
+
+    fn ident_lifetime<'fmt>(s: &&'fmt str) -> Result<&'fmt str, std::convert::Infallible> {
+        Ok(s)
+    }
+    let template = BorrowedTemplate::<&str>::compile("{sh}").unwrap();
+    assert_eq!(template.render(&ident_lifetime).unwrap(), "sh");
 }

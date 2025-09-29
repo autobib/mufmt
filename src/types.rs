@@ -71,6 +71,7 @@
 //! [`HashMap<K, V>`][H], [`BTreeMap<K, V>`][B] | Any borrowed format of the map key | Value `K` corresponding to the key | [`KeyMissing`] if the key does not exist
 //! [`Vec<T>`], [`VecDeque<T>`][V], `&[T]`, `&mut T`, [`[T]`](std::slice), [`[T; N]`](std::array) | `usize` indices | Value `T` at the index | [`IndexOutOfRange`] if the index is too large
 //! [`[T; N]`](std::array) | [`BoundedInt<N>`] index | Value `T` at the index | [`Infallible`][I]
+//! `Fn(&A) -> Result<T, E>` | The type `A` | The type `T` from applying the closure | `E`
 //!
 //! [A]: std::sync::Arc
 //! [R]: std::rc::Rc
