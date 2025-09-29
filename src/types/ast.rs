@@ -21,11 +21,11 @@ pub struct BoundedInt<const N: usize> {
 impl<'fmt, T: Ast<'fmt>> Ast<'fmt> for Option<T> {
     type Error = T::Error;
 
-    fn from_block(block: &'fmt str) -> Result<Self, Self::Error> {
-        if block.is_empty() {
+    fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error> {
+        if expr.is_empty() {
             Ok(None)
         } else {
-            Ok(Some(T::from_block(block)?))
+            Ok(Some(T::from_expr(expr)?))
         }
     }
 }
@@ -36,8 +36,8 @@ macro_rules! ast_from_new {
             impl<'fmt, T: $crate::Ast<'fmt>> $crate::Ast<'fmt> for $ast<T> {
                 type Error = T::Error;
 
-                fn from_block(s: &'fmt str) -> Result<Self, Self::Error> {
-                    Ok($ast::new(T::from_block(s)?))
+                fn from_expr(s: &'fmt str) -> Result<Self, Self::Error> {
+                    Ok($ast::new(T::from_expr(s)?))
                 }
             }
         )*
@@ -49,8 +49,8 @@ ast_from_new!(Box, Arc, Rc);
 impl<'fmt, T: Ast<'fmt>> Ast<'fmt> for Result<T, T::Error> {
     type Error = Infallible;
 
-    fn from_block(block: &'fmt str) -> Result<Self, Self::Error> {
-        Ok(T::from_block(block))
+    fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error> {
+        Ok(T::from_expr(expr))
     }
 }
 
@@ -78,8 +78,8 @@ impl<const N: usize> TryFrom<usize> for BoundedInt<N> {
 impl<const N: usize> Ast<'_> for BoundedInt<N> {
     type Error = ParseBoundedIntError;
 
-    fn from_block(block: &str) -> Result<Self, Self::Error> {
-        let inner = block.parse()?;
+    fn from_expr(expr: &str) -> Result<Self, Self::Error> {
+        let inner = expr.parse()?;
         if inner < N {
             Ok(Self { inner })
         } else {
@@ -123,7 +123,7 @@ macro_rules! ast_from_str {
             impl $crate::Ast<'_> for $ast {
                 type Error = <$ast as ::std::str::FromStr>::Err;
 
-                fn from_block(s: &str) -> Result<Self, Self::Error> {
+                fn from_expr(s: &str) -> Result<Self, Self::Error> {
                     ::std::str::FromStr::from_str(s)
                 }
             }
@@ -179,7 +179,7 @@ ast_from_str!(
 impl<'fmt> Ast<'fmt> for &'fmt str {
     type Error = Infallible;
 
-    fn from_block(s: &'fmt str) -> Result<Self, Self::Error> {
+    fn from_expr(s: &'fmt str) -> Result<Self, Self::Error> {
         Ok(s)
     }
 }
@@ -187,7 +187,7 @@ impl<'fmt> Ast<'fmt> for &'fmt str {
 impl<'fmt> Ast<'fmt> for &'fmt Path {
     type Error = Infallible;
 
-    fn from_block(s: &'fmt str) -> Result<Self, Self::Error> {
+    fn from_expr(s: &'fmt str) -> Result<Self, Self::Error> {
         Ok(Path::new(s))
     }
 }
@@ -195,7 +195,7 @@ impl<'fmt> Ast<'fmt> for &'fmt Path {
 impl Ast<'_> for () {
     type Error = NotEmpty;
 
-    fn from_block(s: &'_ str) -> Result<Self, Self::Error> {
+    fn from_expr(s: &'_ str) -> Result<Self, Self::Error> {
         if s.is_empty() { Ok(()) } else { Err(NotEmpty) }
     }
 }
@@ -203,19 +203,19 @@ impl Ast<'_> for () {
 impl Ast<'_> for Infallible {
     type Error = ();
 
-    fn from_block(_: &'_ str) -> Result<Self, Self::Error> {
+    fn from_expr(_: &'_ str) -> Result<Self, Self::Error> {
         Err(())
     }
 }
 
-/// A type with an [`Ast`] implementation that never fails and ignores the block contents.
+/// A type with an [`Ast`] implementation that never fails and ignores the expression contents.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct IgnoredAny;
 
 impl Ast<'_> for IgnoredAny {
     type Error = Infallible;
 
-    fn from_block(_: &str) -> Result<Self, Self::Error> {
+    fn from_expr(_: &str) -> Result<Self, Self::Error> {
         Ok(Self)
     }
 }

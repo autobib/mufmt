@@ -9,7 +9,7 @@
 //! The main API entrypoints are [`Template`], [`Ast`], and [`Manifest`].
 //! In short:
 //!
-//! - The [`Ast`] describes how to parse a template block into a strongly typed format.
+//! - The [`Ast`] describes how to parse a template expression into a strongly typed format.
 //! - The [`Manifest`] describes how to display an `Ast`.
 //! - The [`Template`] uses the `Ast` to compile templates and the `Manifest` to render them.
 //!
@@ -28,9 +28,9 @@
 //! "Hello {name}!";
 //! ```
 //! Parts outside brackets are referred to as *text* and parts inside brackets are referred to as
-//! *blocks*. See [syntax](#syntax) for a full description of the syntax.
+//! *expressions*. See [syntax](#syntax) for a full description of the syntax.
 //!
-//! However, μfmt does not interpret the contents of blocks. Instead, the block syntax is
+//! However, μfmt does not interpret the contents of expression. Instead, the expression syntax is
 //! defined by an [`Ast`] implementation.
 //! ```
 //! use mufmt::BorrowedTemplate;
@@ -43,7 +43,7 @@
 //!
 //! assert_eq!(template.render(&ctx).unwrap(), "Hello John!");
 //! ```
-//! In this example, the `{name}` block is parsed as a string: `"name"`. The parsing rules are
+//! In this example, the `{name}` expression is parsed as a string: `"name"`. The parsing rules are
 //! defined by the [`Manifest`] implementation of the `HashMap`, which expects raw strings which
 //! correspond to map keys. In general, the type is the associated [`Ast`] implementation.
 //!
@@ -73,7 +73,7 @@
 //! assert!(BorrowedTemplate::<usize>::compile("{-100}").is_err()); // SyntaxError::Ast(ParseIntError, ...)
 //! assert!(BorrowedTemplate::<i8>::compile("{-100}").is_ok());
 //! ```
-//! Passing a template with the incorrect block type will result in a compilation error.
+//! Passing a template with the incorrect expression type will result in a compilation error.
 //! ```compile_fail
 //! # use mufmt::BorrowedTemplate;
 //! let ctx = HashMap::from([("123", "456")]);
@@ -83,31 +83,31 @@
 //! ```
 //!
 //! ## Syntax
-//! A μfmt template is just a rust `str` where bracket-delimited blocks `{...}` are replaced with values
+//! A μfmt template is just a rust `str` where bracket-delimited expressions `{...}` are replaced with values
 //! when the string is rendered.
 //!
-//! 1. The template not inside a block are referred to as *text*,  and the parts inside a block are
-//!    referred to as *blocks*.
-//! 2. Blocks are whitespace trimmed according to the rules of [`trim`](str::trim).
+//! 1. The template not inside an expression are referred to as *text*,  and the parts inside an expression are
+//!    referred to as *expressions*.
+//! 2. expressions are whitespace trimmed according to the rules of [`trim`](str::trim).
 //! 3. To include brackets inside *text*, repeating the bracket (like `{{`) results in text
 //!    consisting of a single bracket.
-//! 4. To include brackets inside *blocks*, you can use *extended block delimiters*: the initial
-//!    `{` of a block may be followed by any number of `#` characters. Then, the block can only be
+//! 4. To include brackets inside *expressions*, you can use *extended expression delimiters*: the initial
+//!    `{` of an expression may be followed by any number of `#` characters. Then, the expression can only be
 //!    closed by an equal number of `#` characters, followed by `}`.
 //!
-//! Otherwise, the interpretation of contents of the blocks are defined by the specific implementation.
+//! Otherwise, the interpretation of contents of the expressions are defined by the specific implementation.
 //!
 //! Here are examples for each of the above points.
 //!
-//! 1. `"Hello {name}!"` is text `Hello `, then a block `name`, then text `!`.
+//! 1. `"Hello {name}!"` is text `Hello `, then an expression `name`, then text `!`.
 //! 2. `"Hello { name  }!"` is equivalent to the above example.
-//! 3. `"{{{contents}"` is text `{{`, then a block `contents`.
-//! 4. `"{## #}##}"` is a block `#}`.
+//! 3. `"{{{contents}"` is text `{{`, then an expression `contents`.
+//! 4. `"{## #}##}"` is an expression `#}`.
 //!
 //! ## API overview
 //! Broadly speaking, template rendering is split into two independent phases.
 //!
-//! 1. A template string `"Hello {name}"` is compiled by the μfmt parsing rules and the block
+//! 1. A template string `"Hello {name}"` is compiled by the μfmt parsing rules and the expression
 //!    parsing rules defined by the [`Ast`] implementation. The compiled representation is a
 //!    [`Template`] and an error during this phase is a [`SyntaxError`].
 //! 2. The compiled template is combined with additional data via a [`Manifest`]
@@ -120,38 +120,38 @@
 //! `Ast` and to minimize errors during rendering.
 //!
 //! ### The [`Ast`] trait
-//! An [`Ast`] implementation is responsible for parsing the contents of a `{block}`.
+//! An [`Ast`] implementation is responsible for parsing the contents of a `{expression}`.
 //! ```
 //! pub trait Ast<'fmt>: Sized {
 //!     type Error;
 //!
-//!     fn from_block(block: &'fmt str) -> Result<Self, Self::Error>;
+//!     fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error>;
 //! }
 //! ```
-//! The [`Ast::from_block`] method is called by [`Template::compile`] on each block in the template
+//! The [`Ast::from_expr`] method is called by [`Template::compile`] on each expression in the template
 //! string.
 //!
 //! The associated `'fmt` lifetime corresponds to the lifetime of the original template string and
-//! can be used if the [`Ast`] benefits from borrowing from the text of the block itself.
+//! can be used if the [`Ast`] benefits from borrowing from the text of the expression itself.
 //!
 //! The simplest [`Ast`] implementation is the one for `&'fmt str` which is exactly as follows:
 //! ```
 //! # pub trait Ast<'fmt>: Sized {
 //! #     type Error;
-//! #     fn from_block(block: &'fmt str) -> Result<Self, Self::Error>;
+//! #     fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error>;
 //! # }
 //! impl<'fmt> Ast<'fmt> for &'fmt str {
 //!     // Always succeeds
 //!     type Error = std::convert::Infallible;
 //!
-//!     fn from_block(block: &'fmt str) -> Result<Self, Self::Error> {
-//!         Ok(block)
+//!     fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error> {
+//!         Ok(expr)
 //!     }
 //! }
 //! ```
 //!
 //! ### The [`Manifest`] trait
-//! The [`Manifest`] trait describes how to display the [`Ast`] corresponding to each block
+//! The [`Manifest`] trait describes how to display the [`Ast`] corresponding to each expression
 //! produced by an [`Ast`] implementation.
 //! ```
 //! use std::fmt::Display;
@@ -197,7 +197,7 @@ pub use error::{Error, RenderError, SyntaxError};
 use memchr::{memchr, memchr2, memmem};
 use std::{fmt, io, str::from_utf8_unchecked};
 
-/// A typed representation of a block which does not interpret the contents.
+/// A typed representation of an expression which does not interpret the contents.
 ///
 /// The role of an `Ast` is to perform as much validation as possible, without any knowledge of the
 /// [`Manifest`] which may later use it. The correct balance here depends, of course, on the
@@ -205,7 +205,7 @@ use std::{fmt, io, str::from_utf8_unchecked};
 ///
 /// ### Example
 /// A [`HashMap`](std::collections::HashMap) uses `&str` as its `Ast` implementation.
-/// An `&str` is not aware at all of the contents of a block, except that it should interpret it as
+/// An `&str` is not aware at all of the contents of an expression, except that it should interpret it as
 /// a string. In contrast, if we are aware that the keys must come from a specific list, we can
 /// check that this is the case when the template is compiled.
 /// ```
@@ -224,9 +224,9 @@ use std::{fmt, io, str::from_utf8_unchecked};
 /// impl Ast<'_> for Color {
 ///     type Error = InvalidColor;
 ///
-///     fn from_block(block: &str) -> Result<Self, Self::Error> {
-///         // blocks are whitespace trimmed, so we don't need to handle this here
-///         match block {
+///     fn from_expr(expr: &str) -> Result<Self, Self::Error> {
+///         // expressions are whitespace trimmed, so we don't need to handle this here
+///         match expr {
 ///             "red" => Ok(Self::Red),
 ///             "green" => Ok(Self::Green),
 ///             "blue" => Ok(Self::Blue),
@@ -239,11 +239,11 @@ use std::{fmt, io, str::from_utf8_unchecked};
 /// assert!(BorrowedTemplate::<Color>::compile("The sky is very {orange}!").is_err());
 /// ```
 pub trait Ast<'fmt>: Sized {
-    /// An error which may occur while parsing a block.
+    /// An error which may occur while parsing an expression.
     type Error;
 
-    /// Parse the `Ast` from the block contents.
-    fn from_block(block: &'fmt str) -> Result<Self, Self::Error>;
+    /// Parse the `Ast` from the expression.
+    fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error>;
 }
 
 /// Manifest provided to render the `Ast` to a new string.
@@ -259,14 +259,15 @@ pub trait Manifest<A> {
 
 /// A component of a template.
 ///
-/// Internally, a [`Template`] is a [`Vec`] of [`Span`]s, which correspond to subsequent blocks.
+/// Internally, a [`Template`] is a [`Vec`] of [`Span`]s, which correspond to subsequent
+/// expressions.
 /// The spans can be accessed
 #[derive(Debug, PartialEq, Clone)]
 pub enum Span<T, A> {
     /// Text, with brackets correctly escaped.
     Text(T),
-    /// An interpreted block.
-    Block(A),
+    /// An interpreted expression.
+    Expr(A),
 }
 
 impl<T, A> Span<T, A> {
@@ -275,9 +276,9 @@ impl<T, A> Span<T, A> {
         matches!(self, Self::Text(_))
     }
 
-    /// Returns if this is a [`Block`](Span::Block).
-    pub fn is_block(&self) -> bool {
-        matches!(self, Self::Block(_))
+    /// Returns if this is a [`Expr`](Span::Expr).
+    pub fn is_expr(&self) -> bool {
+        matches!(self, Self::Expr(_))
     }
 }
 
@@ -293,8 +294,8 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
     fn try_from(spanned: IndexedSpan<'fmt, T>) -> Result<Self, Self::Error> {
         Ok(match spanned.span {
             Span::Text(s) => Self::Text(s),
-            Span::Block(s) => Self::Block(
-                A::from_block(s.trim())
+            Span::Expr(s) => Self::Expr(
+                A::from_expr(s.trim())
                     .map_err(|e| SyntaxError::Ast(e, spanned.offset..spanned.offset + s.len()))?,
             ),
         })
@@ -315,11 +316,11 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 ///     Oneshot::new(s).validate::<A>().is_ok()
 /// }
 ///
-/// // `IgnoredAny` is a special type which can be parsed from any block
+/// // `IgnoredAny` is a special type which can be parsed from any expression
 /// // and ignores the contents
-/// assert!(is_valid::<IgnoredAny>("No errors {{ {block}"));
-/// assert!(!is_valid::<IgnoredAny>("Invalid: {{block}"));
-/// // validate blocks as `usize`
+/// assert!(is_valid::<IgnoredAny>("No errors {{ {expr}"));
+/// assert!(!is_valid::<IgnoredAny>("Invalid: {{expr}"));
+/// // validate expressions as `usize`
 /// assert!(!is_valid::<usize>("Not a usize: {-100}"));
 /// ```
 pub struct Oneshot<'fmt> {
@@ -364,7 +365,7 @@ impl<'fmt> Oneshot<'fmt> {
         while let Some(spanned) = self.next_span()? {
             match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
                 Span::Text(s) => buf.push_str(s),
-                Span::Block(ast) => {
+                Span::Expr(ast) => {
                     let _ = write!(
                         &mut buf,
                         "{}",
@@ -391,7 +392,7 @@ impl<'fmt> Oneshot<'fmt> {
         while let Some(spanned) = self.next_span()? {
             match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
                 Span::Text(s) => writer.write_all(s.as_bytes())?,
-                Span::Block(ast) => {
+                Span::Expr(ast) => {
                     let _ = write!(
                         writer,
                         "{}",
@@ -418,7 +419,7 @@ impl<'fmt> Oneshot<'fmt> {
         while let Some(spanned) = self.next_span()? {
             match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
                 Span::Text(s) => writer.write_str(s)?,
-                Span::Block(ast) => {
+                Span::Expr(ast) => {
                     let _ = write!(
                         writer,
                         "{}",
@@ -480,7 +481,7 @@ impl<'fmt> Oneshot<'fmt> {
                 Err(SyntaxError::ExtraBracket(self.cursor))
             }
             [b'{', b'#', ..] => {
-                // extended block
+                // extended expression
 
                 // we first count how many leading `#` characters there are
                 let hash_count = self.template[self.cursor + 2..]
@@ -488,40 +489,40 @@ impl<'fmt> Oneshot<'fmt> {
                     .take_while(|b| **b == b'#')
                     .count()
                     + 1;
-                let block_start = self.cursor + 1 + hash_count;
-                let hash_patt = &self.template[self.cursor + 1..block_start];
+                let expr_start = self.cursor + 1 + hash_count;
+                let hash_patt = &self.template[self.cursor + 1..expr_start];
 
-                let tail = &self.template[block_start..];
+                let tail = &self.template[expr_start..];
                 for idx in memmem::find_iter(tail, hash_patt) {
                     // candidate end: check if the next byte is a closing bracket
-                    let block_end = block_start + idx;
-                    if let Some(b'}') = self.template.get(block_end + hash_count) {
-                        let s = unsafe { self.get_unchecked(block_start..block_end) };
-                        self.cursor = block_end + hash_count + 1;
+                    let expr_end = expr_start + idx;
+                    if let Some(b'}') = self.template.get(expr_end + hash_count) {
+                        let s = unsafe { self.get_unchecked(expr_start..expr_end) };
+                        self.cursor = expr_end + hash_count + 1;
                         return Ok(Some(IndexedSpan {
-                            span: Span::Block(s),
-                            offset: block_start,
+                            span: Span::Expr(s),
+                            offset: expr_start,
                         }));
                     }
                 }
-                Err(SyntaxError::UnclosedBlock(self.cursor))
+                Err(SyntaxError::UnclosedExpr(self.cursor))
             }
             [b'{', ..] => {
-                // normal block
+                // normal expression
 
-                let block_start = self.cursor + 1;
-                let tail = &self.template[block_start..];
+                let expr_start = self.cursor + 1;
+                let tail = &self.template[expr_start..];
                 match memchr(b'}', tail) {
                     Some(idx) => {
-                        let block_end = block_start + idx;
-                        let s = unsafe { self.get_unchecked(block_start..block_end) };
-                        self.cursor = block_end + 1;
+                        let expr_end = expr_start + idx;
+                        let s = unsafe { self.get_unchecked(expr_start..expr_end) };
+                        self.cursor = expr_end + 1;
                         Ok(Some(IndexedSpan {
-                            span: Span::Block(s),
-                            offset: block_start,
+                            span: Span::Expr(s),
+                            offset: expr_start,
                         }))
                     }
-                    None => Err(SyntaxError::UnclosedBlock(self.cursor)),
+                    None => Err(SyntaxError::UnclosedExpr(self.cursor)),
                 }
             }
             _ => {
@@ -549,7 +550,7 @@ impl<'fmt> Oneshot<'fmt> {
     }
 }
 
-/// A compiled representation of a template string with block syntax defined by an [`Ast`].
+/// A compiled representation of a template string with expression syntax defined by an [`Ast`].
 ///
 /// Compile a template by providing a template string and an [`Ast`] using [`Template::compile`].
 /// Once you have a template, render it using an appropriate [`Manifest`]:
@@ -566,7 +567,7 @@ impl<'fmt> Oneshot<'fmt> {
 ///   borrow from the template string) or `T = String` (when you want ownership). These
 ///   cases are aliased in [`BorrowedTemplate`] and [`OwnedTemplate`]. `T` can
 ///   be any type which is `From<&'fmt str>` (when compiling) and `AsRef<str>` (when rendering).
-/// - `A`: the compiled format of the block. When compiling from a template string, this must
+/// - `A`: the compiled format of the expression. When compiling from a template string, this must
 ///   implement [`Ast`].
 ///
 /// ## Template spans
@@ -578,7 +579,7 @@ impl<'fmt> Oneshot<'fmt> {
 /// let template = Template::<&str, usize>::compile("Items {1} and {12}").unwrap();
 /// // the implementation of `len` and `nth` efficient
 /// assert_eq!(template.spans().len(), 4);
-/// assert_eq!(template.spans().get(3), Some(&Span::Block(12)));
+/// assert_eq!(template.spans().get(3), Some(&Span::Expr(12)));
 /// ```
 /// Then, modify the template by decomposing it into spans and then reconstructing it.
 /// ```
@@ -589,17 +590,17 @@ impl<'fmt> Oneshot<'fmt> {
 ///     .into_iter()
 ///     .map(|span| match span {
 ///         Span::Text(t) => Span::Text(t),
-///         Span::Block(b) => Span::Block(b.max(4)),
+///         Span::Expr(b) => Span::Expr(b.max(4)),
 ///     })
 ///     // a template can be constructed from an iterator of `Span`s.
 ///     .collect();
-/// assert_eq!(mapped_template.spans().get(1), Some(&Span::Block(4)));
+/// assert_eq!(mapped_template.spans().get(1), Some(&Span::Expr(4)));
 /// ```
 /// Manually construct a template from an iterator of [`Span`]s.
 /// ```
 /// # use mufmt::{Span, Template};
 /// let template: Template<&'static str, usize> =
-///     [Span::Text("Hello "), Span::Block(2), Span::Text("!")]
+///     [Span::Text("Hello "), Span::Expr(2), Span::Text("!")]
 ///         .into_iter()
 ///         .collect();
 ///
@@ -611,7 +612,7 @@ impl<'fmt> Oneshot<'fmt> {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Template<T, A> {
-    /// The text and block spans of this template.
+    /// The text and expression spans of this template.
     inner: Vec<Span<T, A>>,
 }
 
@@ -656,7 +657,7 @@ impl<T, A> IntoIterator for Template<T, A> {
 }
 
 impl<T, A> Template<T, A> {
-    /// Compile the provided template string, interpreting the blocks using the `Ast`.
+    /// Compile the provided template string, interpreting the expressions using the `Ast`.
     #[inline]
     pub fn compile<'fmt>(s: &'fmt str) -> Result<Self, SyntaxError<A::Error>>
     where
@@ -683,7 +684,7 @@ impl<T, A> Template<T, A> {
                 Span::Text(s) => {
                     buf.push_str(s.as_ref());
                 }
-                Span::Block(ast) => {
+                Span::Expr(ast) => {
                     let _ = write!(&mut buf, "{}", ctx.manifest(ast)?);
                 }
             }
@@ -704,7 +705,7 @@ impl<T, A> Template<T, A> {
                 Span::Text(s) => {
                     writer.write_all(s.as_ref())?;
                 }
-                Span::Block(ast) => {
+                Span::Expr(ast) => {
                     write!(
                         writer,
                         "{}",
@@ -729,7 +730,7 @@ impl<T, A> Template<T, A> {
                 Span::Text(s) => {
                     writer.write_str(s.as_ref())?;
                 }
-                Span::Block(ast) => {
+                Span::Expr(ast) => {
                     write!(
                         writer,
                         "{}",

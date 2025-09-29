@@ -19,7 +19,7 @@ fn parse() {
         "Hello {name}!",
         [
             (Span::Text("Hello "), 0),
-            (Span::Block("name"), 7),
+            (Span::Expr("name"), 7),
             (Span::Text("!"), 12),
         ],
     );
@@ -47,14 +47,14 @@ fn parse() {
         "{{{}}}",
         [
             (Span::Text("{"), 1),
-            (Span::Block(""), 3),
+            (Span::Expr(""), 3),
             (Span::Text("}"), 5),
         ],
     );
 
-    check_parts("{## #}##}", [(Span::Block(" #}"), 3)]);
-    check_parts("{# ##}", [(Span::Block(" #"), 2)]);
-    check_parts("{## ####}", [(Span::Block(" ##"), 3)]);
+    check_parts("{## #}##}", [(Span::Expr(" #}"), 3)]);
+    check_parts("{# ##}", [(Span::Expr(" #"), 2)]);
+    check_parts("{## ####}", [(Span::Expr(" ##"), 3)]);
 }
 
 #[test]
@@ -69,13 +69,13 @@ fn parse_err() {
     );
     assert_eq!(
         oneshot.next_span::<&str, ()>(),
-        Err(SyntaxError::UnclosedBlock(1))
+        Err(SyntaxError::UnclosedExpr(1))
     );
 
     let mut oneshot = Oneshot::new("{# }");
     assert_eq!(
         oneshot.next_span::<&str, ()>(),
-        Err(SyntaxError::UnclosedBlock(0))
+        Err(SyntaxError::UnclosedExpr(0))
     );
 
     let mut oneshot = Oneshot::new(" }");

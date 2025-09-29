@@ -1,7 +1,7 @@
 //! ### An example template language
 //! To understand how these two phases interact, let's define a custom template language. The idea
 //! will be as follows:
-//! - The user will provide blocks of the form `{<str>:<u8>}`, which is then
+//! - The user will provide expressions of the form `{<str>:<u8>}`, which is then
 //!   formatted to repeat the provided `<str>` `<u8>` times. For example, the
 //!   template `"{ AB : 3 }"` renders to `ABABAB`.
 //! - Since we don't want the strings to be too long, we will provide an additional
@@ -27,9 +27,9 @@ pub enum Error {
 impl<'fmt> Ast<'fmt> for Repeat<'fmt> {
     type Error = Error;
 
-    /// Parse a block of the form `{<str> : <u8>}`
-    fn from_block(block: &'fmt str) -> Result<Self, Self::Error> {
-        match block.split_once(':') {
+    /// Parse an expression of the form `{<str> : <u8>}`
+    fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error> {
+        match expr.split_once(':') {
             Some((left, right)) => {
                 // parse the u8 using `u8::from_str`
                 let count = right.trim().parse().map_err(Error::InvalidInt)?;

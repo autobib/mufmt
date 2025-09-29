@@ -14,26 +14,27 @@ use std::{fmt, io, ops};
 /// An error while compiling a template string.
 ///
 /// The [`Ast`](SyntaxError::Ast) variant is emitted by the particular [`Ast`](crate::Ast)
-/// implementation which is used to parse the template string blocks. It is the associated
+/// implementation which is used to parse the template string expressions. It is the associated
 /// [`Ast::Error`](crate::Ast::Error) type.
 #[derive(Debug, PartialEq)]
 pub enum SyntaxError<E> {
-    /// The format parsing a block produced an error.
+    /// The format parsing a expression produced an error.
     Ast(E, ops::Range<usize>),
-    /// A closing bracket, without a matching block start.
+    /// A closing bracket, without a matching opening bracket.
     ExtraBracket(usize),
-    /// A block was started, but not closed.
-    UnclosedBlock(usize),
+    /// An expression was started, but not closed.
+    UnclosedExpr(usize),
 }
 
 /// An error while rendering a compiled template string.
 ///
 /// The [`Render`](RenderError::Render) variant is emitted by the particular
-/// [`Manifest`](crate::Manifest) implementation which is used to parse the template string blocks.
+/// [`Manifest`](crate::Manifest) implementation which is used to parse the template string
+/// expressions.
 /// It is the associated [`Manifest::Error`](crate::Manifest::Error) type.
 #[derive(Debug)]
 pub enum RenderError<R> {
-    /// A value in a block could not be rendered.
+    /// A value in an expression could not be rendered.
     Render(R),
     /// An error occured while writing to an [`io::Write`].
     IO(io::Error),

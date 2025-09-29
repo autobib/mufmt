@@ -14,13 +14,13 @@
 //!
 //! Types | Parse rules | Syntax Error
 //! ------|-------------|------
-//! `String`, `&'fmt str`, `PathBuf`, `&'fmt Path` | Captures the literal contents of the block | [`Infallible`][I]
+//! `String`, `&'fmt str`, `PathBuf`, `&'fmt Path` | Captures the literal contents of the expression | [`Infallible`][I]
 //! `bool` | literal `true` or `false` | [`ParseBoolError`](std::str::ParseBoolError)
 //! `u*`, `i*`, and `NonZero<..>` variants | The number, from a decimal | [`ParseIntError`]
 //! `f32`, `f64` |  The float, using the rules in [`FromStr`][F2] | [`ParseFloatError`](std::num::ParseFloatError)
-//! `()` | Only an empty block | [`NotEmpty`]
+//! `()` | Only an empty expression | [`NotEmpty`]
 //! [`Infallible`][I] | Always fails to parse | `()`
-//! [`Option<T>`] where `T: Ast` | `None` if the block is empty, else `Some(T)` | The error type of `T`
+//! [`Option<T>`] where `T: Ast` | `None` if the expression is empty, else `Some(T)` | The error type of `T`
 //! [`Box<T>`], [`Arc<T>`][A], [`Rc<T>`][R] where `T: Ast` | Uses parse rules of `T` | The error type of `T`
 //! `Result<T, T::Error>` where `T: Ast` | Uses parse rules of `T`, capturing error | [`Infallible`][I]
 //!
@@ -34,31 +34,31 @@
 //! Types | Parse rules | Syntax Error
 //! ------|-------------|-------------
 //! [`BoundedInt<N>`] | A decimal in the range `0..N` | [`ParseBoundedIntError`]
-//! [`IgnoredAny`] | Accepts any block without capturing | [`Infallible`][I]
+//! [`IgnoredAny`] | Accepts any expression without capturing | [`Infallible`][I]
 //!
 //! ### `Ast` examples
 //! Parse a float in many different formats.
 //! ```
 //! # use mufmt::Ast;
-//! assert_eq!(f64::from_block("4e2"), Ok(4e2));
-//! assert_eq!(f64::from_block("+infinity"), Ok(f64::INFINITY));
+//! assert_eq!(f64::from_expr("4e2"), Ok(4e2));
+//! assert_eq!(f64::from_expr("+infinity"), Ok(f64::INFINITY));
 //! ```
 //! Parse an `Option<T>`.
 //! ```
 //! # use mufmt::Ast;
-//! assert_eq!(Option::<u8>::from_block(""), Ok(None));
-//! assert_eq!(Option::<u8>::from_block("3"), Ok(Some(3)));
+//! assert_eq!(Option::<u8>::from_expr(""), Ok(None));
+//! assert_eq!(Option::<u8>::from_expr("3"), Ok(Some(3)));
 //!
 //! // the `Option` has precedence over the internal type
-//! assert_eq!(Option::<String>::from_block(""), Ok(None));
-//! assert_eq!(String::from_block(""), Ok(String::new()));
+//! assert_eq!(Option::<String>::from_expr(""), Ok(None));
+//! assert_eq!(String::from_expr(""), Ok(String::new()));
 //! ```
 //! Parse a `Result<T, T::Error>`.
 //! ```
 //! # use mufmt::Ast;
 //! // always returns Ok(_) since the err variant is captured
-//! assert!(matches!(Result::<u8, <u8 as Ast>::Error>::from_block(""), Ok(Err(_))));
-//! assert!(matches!(Result::<u16, <u16 as Ast>::Error>::from_block("12"), Ok(Ok(_))));
+//! assert!(matches!(Result::<u8, <u8 as Ast>::Error>::from_expr(""), Ok(Err(_))));
+//! assert!(matches!(Result::<u16, <u16 as Ast>::Error>::from_expr("12"), Ok(Ok(_))));
 //! ```
 //!
 //!
@@ -95,7 +95,7 @@ pub struct IndexOutOfRange(pub usize);
 #[derive(Debug, Clone)]
 pub struct KeyMissing;
 
-/// A block was expected to be empty.
+/// An expression was expected to be empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotEmpty;
 
