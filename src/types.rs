@@ -28,8 +28,6 @@
 //! - [`IpAddr`](std::net::IpAddr), [`Ipv4Addr`](std::net::Ipv4Addr), [`Ipv6Addr`](std::net::Ipv6Addr), [`SocketAddr`](std::net::SocketAddr), [`SocketAddrV4`](std::net::SocketAddrV4), [`SocketAddrV6`](std::net::SocketAddrV6)
 //!
 //! You can implement [`Ast`](crate::Ast) on your own types which implement [`FromStr`][F] using the [`ast_from_str`] macro.
-//! While the `FromStr` implementation is a good default choice, a blanket implementation is not
-//! provided because of specialization issues.
 //!
 //! The following table summarizes the implementations on types defined in this module.
 //!
@@ -68,7 +66,7 @@
 //!
 //! Types | Key | Displays | Render Error
 //! ------|-----|----------|------
-//! [`HashMap<K, V>`][H], [`BTreeMap<K, V>`][B] | Any borrowed format of the map key | Value `K` corresponding to the key | [`KeyMissing`] if the key does not exist
+//! [`HashMap<K, V>`][H], [`BTreeMap<K, V>`][B] | Any borrowed format of `K` | Value `V` corresponding to the key | [`KeyMissing`] if the key does not exist
 //! [`Vec<T>`], [`VecDeque<T>`][V], `&[T]`, `&mut T`, [`[T]`](std::slice), [`[T; N]`](std::array) | `usize` indices | Value `T` at the index | [`IndexOutOfRange`] if the index is too large
 //! [`[T; N]`](std::array) | [`BoundedInt<N>`] index | Value `T` at the index | [`Infallible`][I]
 //! `Fn(&A) -> Result<T, E>` | The type `A` | The type `T` from applying the closure | `E`
