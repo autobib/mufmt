@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 name = "mufmt"
 repository = "https://github.com/autobib/mufmt"
-version = "0.1.0"
+version = "0.0.1-alpha.1"
 
 [dependencies]
 memchr = "2.7.6"
@@ -15,3 +15,10 @@ memchr = "2.7.6"
 name = "basic"
 crate-type = ["staticlib"]
 test = true
+
+[lints.clippy]
+redundant_closure_for_method_calls = "warn"
+same_functions_in_if_condition = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+use_self = "warn"
