@@ -10,3 +10,8 @@ version = "0.1.0"
 
 [dependencies]
 memchr = "2.7.6"
+
+[[example]]
+name = "basic"
+crate-type = ["staticlib"]
+test = true

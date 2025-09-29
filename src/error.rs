@@ -1,10 +1,15 @@
 //! # Error types
 //!
-//! This module contains error types which are generic over some type parameter
-//! representing error which can occur from a particular [`Ast`](crate::Ast) or
-//! [`Context`](crate::Context) implementation.
+//! This module contains a variety of error types used in this crate.
+//!
+//! - The [`SyntaxError`], [`RenderError`], and [`Error`] contain generics to propogate errors
+//!   which may result from a particular [`Ast`](crate::Ast) or [`Manifest`](crate::Manifest)
+//!   implementation.
 
 use std::{fmt, io, ops};
+
+// TODO: work out a way for the errors to contain span information relative to the original
+// template
 
 /// An error while compiling a template string.
 ///
@@ -24,8 +29,8 @@ pub enum SyntaxError<E> {
 /// An error while rendering a compiled template string.
 ///
 /// The [`Render`](RenderError::Render) variant is emitted by the particular
-/// [`Context`](crate::Context) implementation which is used to parse the template string blocks.
-/// It is the associated [`Context::Error`](crate::Context::Error) type.
+/// [`Manifest`](crate::Manifest) implementation which is used to parse the template string blocks.
+/// It is the associated [`Manifest::Error`](crate::Manifest::Error) type.
 #[derive(Debug)]
 pub enum RenderError<R> {
     /// A value in a block could not be rendered.

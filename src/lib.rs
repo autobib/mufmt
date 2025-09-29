@@ -4,18 +4,23 @@
 //!
 //! μfmt allows arbitrary types to define a formatting syntax and compiled template
 //! format. μfmt also provides a number of built-in formats, backed by data stored in
-//! standard collection types like [`HashMap`](std::collections::HashMap) or [`Vec`].
+//! collection types like [`HashMap`](std::collections::HashMap) or [`Vec`].
 //!
-//! The main API entrypoints are [`Template`], [`Ast`], and [`Context`].
+//! The main API entrypoints are [`Template`], [`Ast`], and [`Manifest`].
+//! In short:
+//!
+//! - The [`Ast`] describes how to parse a template block into a strongly typed format.
+//! - The [`Manifest`] describes how to display an `Ast`.
+//! - The [`Template`] uses the `Ast` to compile templates and the `Manifest` to render them.
+//!
+//! For more information, go to:
 //!
 //! - [Introduction](#introduction): for a quick introduction and basic usage
-//! - [Template Syntax](#syntax): to understand the global syntax rules
-//! - [API Introduction](#api-introduction): for a detailed introduction to writing your own
-//!   format.
-//! - [Template lifetimes](#template-lifetimes): for an overview of the `'fmt` lifetime and
-//!   how to work around it when necessary.
-//! - [Built-in implementations](#built-in-implementations): for a summary of the [`Ast`] and
-//!   [`Context`] implementations included by default.
+//! - [Syntax](#syntax): to understand the global syntax rules
+//! - [`Ast` and `Manifest` overview](#api-overview): for a general overview of the core `Ast` and
+//!   `Manifest` traits
+//! - The [`types`] module: for custom [`Ast`] and [`Manifest`] implementations and a documentation
+//!   of the implementations for the standard library.
 //!
 //! ## Introduction
 //! μfmt templates are similar to Rust format strings:
@@ -26,26 +31,29 @@
 //! *blocks*. See [syntax](#syntax) for a full description of the syntax.
 //!
 //! However, μfmt does not interpret the contents of blocks. Instead, the block syntax is
-//! *type-driven*: template rendering is defined using the provided rendering context.
+//! defined by an [`Ast`] implementation.
 //! ```
-//! use mufmt::Template;
+//! use mufmt::BorrowedTemplate;
 //! use std::collections::HashMap;
 //!
-//! let template = Template::compile("Hello {name}!").unwrap();
+//! // The `Ast` is &str
+//! let template = BorrowedTemplate::<&str>::compile("Hello {name}!").unwrap();
+//! // The `Manifest` is `HashMap<str, str>`
 //! let ctx = HashMap::from([("name", "John")]);
 //!
 //! assert_eq!(template.render(&ctx).unwrap(), "Hello John!");
 //! ```
 //! In this example, the `{name}` block is parsed as a string: `"name"`. The parsing rules are
-//! defined by the [`Context`] implementation of the `HashMap`, which expects raw strings which
+//! defined by the [`Manifest`] implementation of the `HashMap`, which expects raw strings which
 //! correspond to map keys. In general, the type is the associated [`Ast`] implementation.
 //!
 //! Suppose we instead provide a [`Vec`] as the context. Then the keys are instead parsed as `usize`.
 //! In this example, we also see that same template can be re-used with a new context without
 //! requiring recompilation of the template.
 //! ```
-//! # use mufmt::Template;
-//! let template = Template::compile("Letter: {1}").unwrap();
+//! # use mufmt::BorrowedTemplate;
+//! // we don't need a type annotation here since `Vec` only accepts `usize` as the key
+//! let template = BorrowedTemplate::compile("Letter: {1}").unwrap();
 //! let ctx = vec!["α", "β", "γ"];
 //!
 //! let mut buf = String::new();
@@ -62,15 +70,15 @@
 //!
 //! // the intermediate syntax type is a `usize`, which is used to index into the vec
 //! // if the user provides an invalid type, compilation will fail
-//! assert!(Template::<usize>::compile("{-100}").is_err()); // SyntaxError::Ast(ParseIntError, ...)
-//! assert!(Template::<i8>::compile("{-100}").is_ok());
+//! assert!(BorrowedTemplate::<usize>::compile("{-100}").is_err()); // SyntaxError::Ast(ParseIntError, ...)
+//! assert!(BorrowedTemplate::<i8>::compile("{-100}").is_ok());
 //! ```
 //! Passing a template with the incorrect block type will result in a compilation error.
 //! ```compile_fail
-//! # use mufmt::Template;
+//! # use mufmt::BorrowedTemplate;
 //! let ctx = HashMap::from([("123", "456")]);
 //! // a `HashMap` expects an `&str`, not a `usize`
-//! let template = Template::<usize>::compile("Number: {123}").unwrap();
+//! let template = BorrowedTemplate::<usize>::compile("Number: {123}").unwrap();
 //! template.render(&ctx);
 //! ```
 //!
@@ -96,150 +104,103 @@
 //! 3. `"{{{contents}"` is text `{{`, then a block `contents`.
 //! 4. `"{## #}##}"` is a block `#}`.
 //!
-//! ## API introduction
+//! ## API overview
 //! Broadly speaking, template rendering is split into two independent phases.
 //!
 //! 1. A template string `"Hello {name}"` is compiled by the μfmt parsing rules and the block
 //!    parsing rules defined by the [`Ast`] implementation. The compiled representation is a
 //!    [`Template`] and an error during this phase is a [`SyntaxError`].
-//! 2. The compiled template is combined with additional data via a [`Context`]
+//! 2. The compiled template is combined with additional data via a [`Manifest`]
 //!    implementation to obtain a type which can be displayed. An error during this phase
 //!    is a [`RenderError`].
 //!
-//! The precise dividing line between where the `Ast` parsing ends and template rendering begins
-//! depends on the use-case. At one extreme, one could simply use a `&'fmt str` and then perform
-//! all parsing within the [`Context`] implementation. In this case, compilation is guaranteed to
-//! succeed as long as the template string matches the general syntax.
+//! The precise dividing line between where the `Ast` parsing ends and template rendering begins is
+//! intentionally unspecified and depends on the use-case. However, a good rule of thumb
+//! (especially if you are reusing templates) is to do as much as possible when parsing into the
+//! `Ast` and to minimize errors during rendering.
 //!
-//! On the other hand, if a single template is rendered a very large number of times, there can
-//! be a substantial gain in performance by doing as much work as possible up-front.
-//!
-//! ### An example template language
-//! To understand how these two phases interact, let's define a custom template language. The idea
-//! will be as follows:
-//! - The user will provide blocks of the form `{<str>:<u8>}`, which is then
-//!   formatted to repeat the provided `<str>` `<u8>` times. For example, the
-//!   template `"{ AB : 3 }"` renders to `ABABAB`.
-//! - Since we don't want the strings to be too long, we will provide an additional
-//!   `u8` which will specify a limit for the number of repetitions.
-//!
-//! First, we must determine our intermediate [`Ast`] type. The natural candidate here is a tuple
-//! `(&'fmt, u8)`.
-//!
-//! Then, we define our [`Context`]. This is a single `u8` which defines the limit of the
-//! number of repetitions.
+//! ### The [`Ast`] trait
+//! An [`Ast`] implementation is responsible for parsing the contents of a `{block}`.
 //! ```
-//! use std::{fmt, num::ParseIntError};
-//! use mufmt::{Ast, Context, Template, error::RenderError};
+//! pub trait Ast<'fmt>: Sized {
+//!     type Error;
 //!
-//! /// The string to be repeated along with the number of repetitions.
-//! struct Repeat<'fmt>(&'fmt str, u8);
-//!
-//! #[derive(Debug)]
-//! enum Error {
-//!     /// Failed to parse the int
-//!     InvalidInt(ParseIntError),
-//!     /// Missing the `:` delimeter
-//!     MissingDelimeter,
+//!     fn from_block(block: &'fmt str) -> Result<Self, Self::Error>;
 //! }
+//! ```
+//! The [`Ast::from_block`] method is called by [`Template::compile`] on each block in the template
+//! string.
 //!
-//! impl<'fmt> Ast<'fmt> for Repeat<'fmt> {
-//!     type Error = Error;
+//! The associated `'fmt` lifetime corresponds to the lifetime of the original template string and
+//! can be used if the [`Ast`] benefits from borrowing from the text of the block itself.
 //!
-//!     /// Parse a block of the form `{<str> : <u8>}`
-//!     fn parse(block: &'fmt str) -> Result<Self, Self::Error> {
-//!         match block.split_once(':') {
-//!             Some((left, right)) => {
-//!                 // parse the u8 using `u8::from_str`
-//!                 let count = right.trim().parse().map_err(Error::InvalidInt)?;
-//!
-//!                 Ok(Self(left.trim(), count))
-//!             }
-//!             None => Err(Error::MissingDelimeter),
-//!         }
-//!     }
-//! }
-//!
-//! /// Implement `Display` so we can use it as the return type for `Context::render`
-//! /// as well.
-//! impl<'fmt> fmt::Display for Repeat<'fmt> {
-//!     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//!         for _ in 0..self.1 {
-//!             f.write_str(self.0)?;
-//!         }
-//!         Ok(())
-//!     }
-//! }
-//!
-//!
-//! /// The context information used to render the `Ast`
-//! struct Limit(u8);
-//!
-//! impl Context for Limit {
-//!     type Ast<'fmt> = Repeat<'fmt>;
-//!
-//!     // rendering never produces an error
+//! The simplest [`Ast`] implementation is the one for `&'fmt str` which is exactly as follows:
+//! ```
+//! # pub trait Ast<'fmt>: Sized {
+//! #     type Error;
+//! #     fn from_block(block: &'fmt str) -> Result<Self, Self::Error>;
+//! # }
+//! impl<'fmt> Ast<'fmt> for &'fmt str {
+//!     // Always succeeds
 //!     type Error = std::convert::Infallible;
 //!
-//!     fn render(
-//!         &self,
-//!         ast: &Self::Ast<'_>,
-//!     ) -> Result<impl fmt::Display, Self::Error> {
-//!         // limit the number of repetitions to the provided value
-//!         let reps = ast.1.min(self.0);
-//!         Ok(Repeat(ast.0, reps))
+//!     fn from_block(block: &'fmt str) -> Result<Self, Self::Error> {
+//!         Ok(block)
 //!     }
 //! }
-//!
-//! let template = Template::compile("{%: 7}!").unwrap();
-//!
-//! assert_eq!(template.render(&Limit(10)).unwrap(), "%%%%%%%!");
-//! assert_eq!(template.render(&Limit(3)).unwrap(), "%%%!");
 //! ```
 //!
-//! ## Built-in implementations
+//! ### The [`Manifest`] trait
+//! The [`Manifest`] trait describes how to display the [`Ast`] corresponding to each block
+//! produced by an [`Ast`] implementation.
+//! ```
+//! use std::fmt::Display;
 //!
-//! ### `Ast` implementations
-//! 1. An `&'fmt str` implements `Ast` by reading the contents of the block (recalling that the
-//!    block automatically whitespace trimmed).
-//! 2. The following types implement `Ast` using their [`FromStr`](std::str::FromStr) implementation:
-//!    - All `u*` and `i*` numeric types, along with their `NonZero<...>` variants.
-//!    - The float types: `f32` and `f64`.
-//! 3. A [`BoundedInt`](ast::BoundedInt), which is a wrapper around a `usize` which is guaranteed
-//!    to be smaller than a provided const bound.
+//! pub trait Manifest<A> {
+//!     type Error;
 //!
-//! ### `Context` implementations
-//! 1. [`HashMap`](std::collections::HashMap) and [`BTreeMap`](std::collections::BTreeMap), with
-//!    keys which can be read from `&'fmt str`, and values which implement
-//!    [`Display`](fmt::Display). Accepts an `&'fmt str`.
-//!    and read the corresponding value (if any). Returns an error if the key is missing.
-//! 2. [`Vec`] and [`VecDeque`](std::collections::VecDeque) with values which implement
-//!    [`Display`](fmt::Display). Accepts a `usize`. Returns an error if the index is out of range.
-//! 3. Slice types `&'a [T]`, `&'a mut [T]`, and `[T]` with values which implement
-//!    [`Display`](fmt::Display). Their [`Context`] implementations accept a `usize`. Returns
-//!    an error if the index is out of range.
-//! 4. [`[T; N]`](std::array) with values which implement [`Display`](fmt::Display). Their
-//!    [`Context`] implementations accept a [`BoundedInt`](ast::BoundedInt). In particular, range
-//!    bounds are checked at template compile time and this does not produce runtime errors.
+//!     fn manifest(&self, ast: &A) -> Result<impl Display, Self::Error>;
+//! }
+//! ```
+//! A `Manifest` implementation is one which knows how to display any `Ast` of type `A`. A single
+//! type can implement `Manifest` multiple times, depending on the keys which it accepts.
+//!
+//! A [`Vec`] implemenets [`Manifest`] by converting an index to the corresponding item at that
+//! index:
+//! ```
+//! # use std::fmt::Display;
+//! # pub trait Manifest<A> {
+//! #     type Error;
+//! #     fn manifest(&self, ast: &A) -> Result<impl Display, Self::Error>;
+//! # }
+//! use mufmt::types::IndexOutOfRange;
+//! impl<T: Display> Manifest<usize> for Vec<T> {
+//!     type Error = IndexOutOfRange;
+//!
+//!     fn manifest(&self, n: &usize) -> Result<impl Display, Self::Error> {
+//!         self.get(*n).ok_or(IndexOutOfRange(*n))
+//!     }
+//! }
+//! ```
+//! The returned `Display` implementation is ephemeral. It may borrow from `self` and
+//! also from the `ast`.
 
 #![deny(missing_docs)]
 
-pub mod ast;
-pub mod error;
+mod error;
 #[cfg(test)]
 mod tests;
+pub mod types;
 
-use error::{RenderError, SyntaxError};
+pub use error::{Error, RenderError, SyntaxError};
 
 use memchr::{memchr, memchr2, memmem};
 use std::{fmt, io, str::from_utf8_unchecked};
 
-use crate::error::Error;
-
 /// A typed representation of a block which does not interpret the contents.
 ///
 /// The role of an `Ast` is to perform as much validation as possible, without any knowledge of the
-/// [`Context`] which may later use it. The correct balance here depends, of course, on the
+/// [`Manifest`] which may later use it. The correct balance here depends, of course, on the
 /// particular use-case.
 ///
 /// ### Example
@@ -248,7 +209,7 @@ use crate::error::Error;
 /// a string. In contrast, if we are aware that the keys must come from a specific list, we can
 /// check that this is the case when the template is compiled.
 /// ```
-/// use mufmt::{Ast, Template};
+/// use mufmt::{Ast, BorrowedTemplate};
 ///
 /// /// The permitted colours
 /// enum Color {
@@ -263,7 +224,7 @@ use crate::error::Error;
 /// impl Ast<'_> for Color {
 ///     type Error = InvalidColor;
 ///
-///     fn parse(block: &str) -> Result<Self, Self::Error> {
+///     fn from_block(block: &str) -> Result<Self, Self::Error> {
 ///         // blocks are whitespace trimmed, so we don't need to handle this here
 ///         match block {
 ///             "red" => Ok(Self::Red),
@@ -274,76 +235,93 @@ use crate::error::Error;
 ///     }
 /// }
 ///
-/// assert!(Template::<Color>::compile("My favourite colors are {blue} and { green }!").is_ok());
-/// assert!(Template::<Color>::compile("The sky is very {orange}!").is_err());
+/// assert!(BorrowedTemplate::<Color>::compile("My favourite colors are {blue} and { green }!").is_ok());
+/// assert!(BorrowedTemplate::<Color>::compile("The sky is very {orange}!").is_err());
 /// ```
 pub trait Ast<'fmt>: Sized {
     /// An error which may occur while parsing a block.
     type Error;
 
     /// Parse the `Ast` from the block contents.
-    fn parse(block: &'fmt str) -> Result<Self, Self::Error>;
+    fn from_block(block: &'fmt str) -> Result<Self, Self::Error>;
 }
 
-/// Context provided to render the `Ast` to a new string.
-pub trait Context {
-    /// The compiled representation accepted by this context.
-    type Ast<'fmt>: Ast<'fmt>;
-
+/// Manifest provided to render the `Ast` to a new string.
+pub trait Manifest<A> {
     /// An error which is produced when rendering.
     type Error;
 
     /// Convert the `Ast` to a type which can be displayed.
     ///
     /// The rendered format is ephemeral.
-    fn render(&self, ast: &Self::Ast<'_>) -> Result<impl fmt::Display, Self::Error>;
+    fn manifest(&self, ast: &A) -> Result<impl fmt::Display, Self::Error>;
 }
 
 /// A component of a template.
+///
+/// Internally, a [`Template`] is a [`Vec`] of [`Span`]s, which correspond to subsequent blocks.
+/// The spans can be accessed
 #[derive(Debug, PartialEq, Clone)]
-pub enum Part<'fmt, A> {
+pub enum Span<T, A> {
     /// Text, with brackets correctly escaped.
-    Text(&'fmt str),
+    Text(T),
     /// An interpreted block.
     Block(A),
 }
 
-impl<'fmt, A: Ast<'fmt>> Part<'fmt, A> {
-    /// Returns if this is a [`Text`](Part::Text).
+impl<T, A> Span<T, A> {
+    /// Returns if this is a [`Text`](Span::Text).
     pub fn is_text(&self) -> bool {
         matches!(self, Self::Text(_))
     }
 
-    /// Returns if this is a [`Block`](Part::Block).
+    /// Returns if this is a [`Block`](Span::Block).
     pub fn is_block(&self) -> bool {
         matches!(self, Self::Block(_))
     }
 }
 
 #[derive(Debug, PartialEq)]
-struct SpannedPart<'fmt> {
-    part: Part<'fmt, &'fmt str>,
+struct IndexedSpan<'fmt, T> {
+    span: Span<T, &'fmt str>,
     offset: usize,
 }
 
-impl<'fmt, A: Ast<'fmt>> TryFrom<SpannedPart<'fmt>> for Part<'fmt, A> {
+impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
     type Error = SyntaxError<A::Error>;
 
-    fn try_from(spanned: SpannedPart<'fmt>) -> Result<Self, Self::Error> {
-        Ok(match spanned.part {
-            Part::Text(s) => Part::Text(s),
-            Part::Block(s) => Part::Block(
-                A::parse(s.trim())
+    fn try_from(spanned: IndexedSpan<'fmt, T>) -> Result<Self, Self::Error> {
+        Ok(match spanned.span {
+            Span::Text(s) => Span::Text(s),
+            Span::Block(s) => Span::Block(
+                A::from_block(s.trim())
                     .map_err(|e| SyntaxError::Ast(e, spanned.offset..spanned.offset + s.len()))?,
             ),
         })
     }
 }
 
-/// A template which can be used at most once.
+/// A template which can be rendered at most once.
 ///
 /// In most cases, you want to use [`Template`] since the additional cost of preparing a
 /// `Template` is relatively minimal (a single [`Vec`] allocation).
+///
+/// ## Examples
+/// Check syntax using [`Oneshot::validate`]:
+/// ```
+/// use mufmt::{Ast, Oneshot, types::IgnoredAny};
+///
+/// fn is_valid<'fmt, A: Ast<'fmt>>(s: &'fmt str) -> bool {
+///     Oneshot::new(s).validate::<A>().is_ok()
+/// }
+///
+/// // `IgnoredAny` is a special type which can be parsed from any block
+/// // and ignores the contents
+/// assert!(is_valid::<IgnoredAny>("No errors {{ {block}"));
+/// assert!(!is_valid::<IgnoredAny>("Invalid: {{block}"));
+/// // validate blocks as `usize`
+/// assert!(!is_valid::<usize>("Not a usize: {-100}"));
+/// ```
 pub struct Oneshot<'fmt> {
     // SAFETY: Must be bytes from valid str
     template: &'fmt [u8],
@@ -353,11 +331,104 @@ pub struct Oneshot<'fmt> {
 }
 
 impl<'fmt> Oneshot<'fmt> {
-    fn new(s: &'fmt str) -> Self {
+    /// Initialize from a template string.
+    pub fn new(s: &'fmt str) -> Self {
         Self {
             template: s.as_bytes(),
             cursor: 0,
         }
+    }
+
+    /// Consume this template, checking if the syntax is valid for the provided [`Ast`].
+    pub fn validate<A>(mut self) -> Result<(), SyntaxError<A::Error>>
+    where
+        A: Ast<'fmt>,
+    {
+        while let Some(spanned) = self.next_span()? {
+            let _ = TryInto::<Span<&'fmt str, A>>::try_into(spanned)?;
+        }
+        Ok(())
+    }
+
+    /// A convenience function to render directly into a newly allocated `String`.
+    ///
+    /// This is equivalent to allocating a new `String` yourself and writing into it with
+    /// [`render_fmt`](Self::render_fmt).
+    pub fn render<A, C>(mut self, ctx: &C) -> Result<String, Error<A::Error, C::Error>>
+    where
+        A: Ast<'fmt>,
+        C: Manifest<A>,
+    {
+        use std::fmt::Write;
+        let mut buf = String::new();
+        while let Some(spanned) = self.next_span()? {
+            match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
+                Span::Text(s) => buf.push_str(s),
+                Span::Block(ast) => {
+                    let _ = write!(
+                        &mut buf,
+                        "{}",
+                        ctx.manifest(&ast).map_err(RenderError::Render)?
+                    );
+                }
+            }
+        }
+
+        Ok(buf)
+    }
+
+    /// Write the template into the provided [`io::Write`] implementation.
+    pub fn render_io<A, C, W>(
+        mut self,
+        ctx: &C,
+        mut writer: W,
+    ) -> Result<(), Error<A::Error, C::Error>>
+    where
+        A: Ast<'fmt>,
+        C: Manifest<A>,
+        W: io::Write,
+    {
+        while let Some(spanned) = self.next_span()? {
+            match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
+                Span::Text(s) => writer.write_all(s.as_bytes())?,
+                Span::Block(ast) => {
+                    let _ = write!(
+                        writer,
+                        "{}",
+                        ctx.manifest(&ast).map_err(RenderError::Render)?
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Write the template into the provided [`fmt::Write`] implementation.
+    pub fn render_fmt<A, C, W>(
+        mut self,
+        ctx: &C,
+        mut writer: W,
+    ) -> Result<(), Error<A::Error, C::Error>>
+    where
+        A: Ast<'fmt>,
+        C: Manifest<A>,
+        W: fmt::Write,
+    {
+        while let Some(spanned) = self.next_span()? {
+            match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
+                Span::Text(s) => writer.write_str(s)?,
+                Span::Block(ast) => {
+                    let _ = write!(
+                        writer,
+                        "{}",
+                        ctx.manifest(&ast).map_err(RenderError::Render)?
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Extract the text corresponding to the provided range, along with the index at which the
@@ -367,7 +438,10 @@ impl<'fmt> Oneshot<'fmt> {
     }
 
     /// The core parsing logic.
-    fn next_part<E>(&mut self) -> Result<Option<SpannedPart<'fmt>>, SyntaxError<E>> {
+    fn next_span<T, E>(&mut self) -> Result<Option<IndexedSpan<'fmt, T>>, SyntaxError<E>>
+    where
+        T: From<&'fmt str>,
+    {
         // check what we are parsing
         let tail = unsafe { self.template.get_unchecked(self.cursor..) };
         match tail {
@@ -385,14 +459,14 @@ impl<'fmt> Oneshot<'fmt> {
                     let text_end = self.cursor + 2 + offset;
                     let s = unsafe { self.get_unchecked(text_start..text_end) };
                     self.cursor = text_end;
-                    Ok(Some(SpannedPart {
-                        part: Part::Text(s),
+                    Ok(Some(IndexedSpan {
+                        span: Span::Text(s.into()),
                         offset: text_start,
                     }))
                 } else {
-                    let res = Ok(Some(SpannedPart {
-                        part: Part::Text(unsafe {
-                            from_utf8_unchecked(&self.template[text_start..])
+                    let res = Ok(Some(IndexedSpan {
+                        span: Span::Text(unsafe {
+                            from_utf8_unchecked(&self.template[text_start..]).into()
                         }),
                         offset: text_start,
                     }));
@@ -424,8 +498,8 @@ impl<'fmt> Oneshot<'fmt> {
                     if let Some(b'}') = self.template.get(block_end + hash_count) {
                         let s = unsafe { self.get_unchecked(block_start..block_end) };
                         self.cursor = block_end + hash_count + 1;
-                        return Ok(Some(SpannedPart {
-                            part: Part::Block(s),
+                        return Ok(Some(IndexedSpan {
+                            span: Span::Block(s),
                             offset: block_start,
                         }));
                     }
@@ -442,8 +516,8 @@ impl<'fmt> Oneshot<'fmt> {
                         let block_end = block_start + idx;
                         let s = unsafe { self.get_unchecked(block_start..block_end) };
                         self.cursor = block_end + 1;
-                        Ok(Some(SpannedPart {
-                            part: Part::Block(s),
+                        Ok(Some(IndexedSpan {
+                            span: Span::Block(s),
                             offset: block_start,
                         }))
                     }
@@ -458,13 +532,13 @@ impl<'fmt> Oneshot<'fmt> {
                     let text_end = self.cursor + offset;
                     self.cursor += offset;
                     let s = unsafe { self.get_unchecked(text_start..text_end) };
-                    Ok(Some(SpannedPart {
-                        part: Part::Text(s),
+                    Ok(Some(IndexedSpan {
+                        span: Span::Text(s.into()),
                         offset: text_start,
                     }))
                 } else {
-                    let res = Ok(Some(SpannedPart {
-                        part: Part::Text(unsafe { from_utf8_unchecked(tail) }),
+                    let res = Ok(Some(IndexedSpan {
+                        span: Span::Text(unsafe { from_utf8_unchecked(tail).into() }),
                         offset: self.cursor,
                     }));
                     self.cursor = self.template.len();
@@ -473,133 +547,122 @@ impl<'fmt> Oneshot<'fmt> {
             }
         }
     }
-
-    /// A convenience function to render directly into a newly allocated `String`.
-    ///
-    /// This is equivalent to allocating a new `String` yourself and writing into it with
-    /// [`render_fmt`](Self::render_fmt).
-    pub fn render<A, C>(mut self, ctx: &C) -> Result<String, Error<A::Error, C::Error>>
-    where
-        A: Ast<'fmt>,
-        C: Context<Ast<'fmt> = A>,
-    {
-        use std::fmt::Write;
-        let mut buf = String::new();
-        while let Some(spanned) = self.next_part()? {
-            match TryInto::<Part<'fmt, A>>::try_into(spanned)? {
-                Part::Text(s) => buf.push_str(s),
-                Part::Block(ast) => {
-                    let _ = write!(
-                        &mut buf,
-                        "{}",
-                        ctx.render(&ast).map_err(RenderError::Render)?
-                    );
-                }
-            }
-        }
-
-        Ok(buf)
-    }
-
-    /// Write the template into the provided [`io::Write`] implementation.
-    pub fn render_io<A, C, W>(
-        mut self,
-        ctx: &C,
-        mut writer: W,
-    ) -> Result<(), Error<A::Error, C::Error>>
-    where
-        A: Ast<'fmt>,
-        C: Context<Ast<'fmt> = A>,
-        W: io::Write,
-    {
-        while let Some(spanned) = self.next_part()? {
-            match TryInto::<Part<'fmt, A>>::try_into(spanned)? {
-                Part::Text(s) => writer.write_all(s.as_bytes())?,
-                Part::Block(ast) => {
-                    let _ = write!(writer, "{}", ctx.render(&ast).map_err(RenderError::Render)?);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Write the template into the provided [`fmt::Write`] implementation.
-    pub fn render_fmt<A, C, W>(
-        mut self,
-        ctx: &C,
-        mut writer: W,
-    ) -> Result<(), Error<A::Error, C::Error>>
-    where
-        A: Ast<'fmt>,
-        C: Context<Ast<'fmt> = A>,
-        W: fmt::Write,
-    {
-        while let Some(spanned) = self.next_part()? {
-            match TryInto::<Part<'fmt, A>>::try_into(spanned)? {
-                Part::Text(s) => writer.write_str(s)?,
-                Part::Block(ast) => {
-                    let _ = write!(writer, "{}", ctx.render(&ast).map_err(RenderError::Render)?);
-                }
-            }
-        }
-
-        Ok(())
-    }
 }
 
-/// A compiled representation of a template string, with block syntax defined by the [`Ast`].
-/// ## Template parts
-/// A template is internally a list of [`Part`]s.
-/// ```
-/// use mufmt::{Part, Template};
+/// A compiled representation of a template string with block syntax defined by an [`Ast`].
 ///
-/// let template = Template::<usize>::compile("Items {1} and {12}").unwrap();
+/// Compile a template by providing a template string and an [`Ast`] using [`Template::compile`].
+/// Once you have a template, render it using an appropriate [`Manifest`]:
+///
+/// - [`Template::render`] returns a [`String`].
+/// - [`Template::render_io`] writes to an [`io::Write`] implementation, such as a
+///   [`File`](std::fs::File) or [`stdout`](std::io::stdout)).
+/// - [`Template::render_fmt`] writes to a [`fmt::Write`] implementation, such as a [`&mut String`](String) buffer.
+///
+/// ## Type parameters
+/// A `Template` is generic over two type parameters:
+///
+/// - `T`: the template text type. Typically, `T = &str` (when you want to
+///   borrow from the template string) or `T = String` (when you want ownership). These
+///   cases are aliased in [`BorrowedTemplate`] and [`OwnedTemplate`]. `T` can
+///   be any type which is `From<&'fmt str>` (when compiling) and `AsRef<str>` (when rendering).
+/// - `A`: the compiled format of the block. When compiling from a template string, this must
+///   implement [`Ast`].
+///
+/// ## Template spans
+/// A template is internally a [`Vec`] of [`Span`]s with additional metadata.
+///
+/// Access the spans with [`Template::spans`].
+/// ```
+/// # use mufmt::{Span, Template};
+/// let template = Template::<&str, usize>::compile("Items {1} and {12}").unwrap();
 /// // the implementation of `len` and `nth` efficient
-/// assert_eq!(template.parts().len(), 4);
-/// assert_eq!(template.parts().nth(3), Some(&Part::Block(12)));
-///
-/// // convert each `usize` block to the maximum of the provided number and 4.
-/// let mapped_template: Template<usize> = template
-///     .parts()
-///     .map(|part| match part {
-///         Part::Text(t) => Part::Text(t),
-///         Part::Block(b) => Part::Block(*b.max(&4)),
-///     })
-///     // a template can be constructed from an iterator of `Part`s.
-///     .collect();
-/// assert_eq!(mapped_template.parts().nth(1), Some(&Part::Block(4)));
+/// assert_eq!(template.spans().len(), 4);
+/// assert_eq!(template.spans().get(3), Some(&Span::Block(12)));
 /// ```
+/// Then, modify the template by decomposing it into spans and then reconstructing it.
+/// ```
+/// # use mufmt::{Span, Template};
+/// # let template = Template::<&str, usize>::compile("Items {1} and {12}").unwrap();
+/// let mapped_template: Template<&str, usize> = template
+///     // a template can be converted into an iterator of `Span`s.
+///     .into_iter()
+///     .map(|span| match span {
+///         Span::Text(t) => Span::Text(t),
+///         Span::Block(b) => Span::Block(b.max(4)),
+///     })
+///     // a template can be constructed from an iterator of `Span`s.
+///     .collect();
+/// assert_eq!(mapped_template.spans().get(1), Some(&Span::Block(4)));
+/// ```
+/// Manually construct a template from an iterator of [`Span`]s.
+/// ```
+/// # use mufmt::{Span, Template};
+/// let template: Template<&'static str, usize> =
+///     [Span::Text("Hello "), Span::Block(2), Span::Text("!")]
+///         .into_iter()
+///         .collect();
+///
+/// let ctx = ["Eero", "Aino", "Maija"];
+///
+/// assert_eq!(template.render(&ctx).unwrap(), "Hello Maija!");
+/// ```
+///
 #[derive(Debug, Clone)]
-pub struct Template<'fmt, A: Ast<'fmt>> {
-    parts: Vec<Part<'fmt, A>>,
+#[non_exhaustive]
+pub struct Template<T, A> {
+    /// The text and block spans of this template.
+    inner: Vec<Span<T, A>>,
 }
 
-impl<'fmt, A> TryFrom<Oneshot<'fmt>> for Template<'fmt, A>
+/// A type alias for a template which borrows from the template string.
+pub type BorrowedTemplate<'fmt, A> = Template<&'fmt str, A>;
+
+/// A type alias for a template which owns its own data.
+pub type OwnedTemplate<A> = Template<String, A>;
+
+impl<'fmt, T, A> TryFrom<Oneshot<'fmt>> for Template<T, A>
 where
+    T: From<&'fmt str>,
     A: Ast<'fmt>,
 {
     type Error = SyntaxError<A::Error>;
 
     fn try_from(mut value: Oneshot<'fmt>) -> Result<Self, Self::Error> {
-        let mut parts = Vec::new();
-        while let Some(spanned) = value.next_part()? {
-            parts.push(spanned.try_into()?);
+        let mut inner = Vec::new();
+        while let Some(spanned) = value.next_span()? {
+            inner.push(spanned.try_into()?);
         }
-        Ok(Self { parts })
+        Ok(Self { inner })
     }
 }
 
-impl<'fmt, A: Ast<'fmt>> Template<'fmt, A> {
-    /// Returns an iterator over the text and block components of this template.
-    pub fn parts(&self) -> TemplateParts<'_, 'fmt, A> {
-        TemplateParts {
-            inner: self.parts.iter(),
+impl<T, A> FromIterator<Span<T, A>> for Template<T, A> {
+    fn from_iter<I: IntoIterator<Item = Span<T, A>>>(iter: I) -> Self {
+        Self {
+            inner: Vec::from_iter(iter),
         }
     }
+}
 
+impl<T, A> IntoIterator for Template<T, A> {
+    type Item = Span<T, A>;
+
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.into_iter()
+    }
+}
+
+impl<T, A> Template<T, A> {
     /// Compile the provided template string, interpreting the blocks using the `Ast`.
-    pub fn compile(s: &'fmt str) -> Result<Self, SyntaxError<A::Error>> {
+    #[inline]
+    pub fn compile<'fmt>(s: &'fmt str) -> Result<Self, SyntaxError<A::Error>>
+    where
+        A: Ast<'fmt>,
+        T: From<&'fmt str>,
+    {
         let oneshot = Oneshot::new(s);
         oneshot.try_into()
     }
@@ -608,98 +671,20 @@ impl<'fmt, A: Ast<'fmt>> Template<'fmt, A> {
     ///
     /// This is equivalent to allocating a new `String` yourself and writing into it with
     /// [`render_fmt`](Self::render_fmt).
-    #[inline]
     pub fn render<C>(&self, ctx: &C) -> Result<String, C::Error>
     where
-        C: Context<Ast<'fmt> = A>,
-    {
-        self.parts().render(ctx)
-    }
-
-    /// Write the compiled template into the provided [`io::Write`] implementation.
-    #[inline]
-    pub fn render_io<C, W>(&self, ctx: &C, writer: W) -> Result<(), RenderError<C::Error>>
-    where
-        C: Context<Ast<'fmt> = A>,
-        W: io::Write,
-    {
-        self.parts().render_io(ctx, writer)
-    }
-
-    /// Write the compiled template into the provided [`fmt::Write`] implementation.
-    #[inline]
-    pub fn render_fmt<C, W>(&self, ctx: &C, writer: W) -> Result<(), RenderError<C::Error>>
-    where
-        C: Context<Ast<'fmt> = A>,
-        W: fmt::Write,
-    {
-        self.parts().render_fmt(ctx, writer)
-    }
-}
-
-impl<'fmt, A: Ast<'fmt>> FromIterator<Part<'fmt, A>> for Template<'fmt, A> {
-    fn from_iter<T: IntoIterator<Item = Part<'fmt, A>>>(iter: T) -> Self {
-        Self {
-            parts: Vec::from_iter(iter),
-        }
-    }
-}
-
-// /// A component of a template which has been detached from the underlying lifetime.
-// #[derive(Debug, PartialEq, Clone)]
-// enum DetachedPart<A> {
-//     /// Text, with brackets correctly escaped.
-//     Text(std::ops::Range<usize>),
-//     /// An interpreted block.
-//     Block(A),
-// }
-
-// #[derive(Debug, Clone)]
-// pub struct OwnedTemplate<A> {
-//     // SAFETY: the spans in the `Text` variants must correspond to valid ranges in `data`.
-//     parts: Vec<DetachedPart<A>>,
-//     template_str: String,
-// }
-
-// pub struct OwnedTemplateParts<'a, A> {
-//     inner: std::slice::Iter<'a, DetachedPart<A>>,
-//     template_str: &'a str,
-// }
-
-// impl<A> OwnedTemplate<A> {
-//     pub fn parts(&self) -> OwnedTemplateParts<'_, A> {
-//         OwnedTemplateParts {
-//             inner: self.parts.iter(),
-//             template_str: &self.template_str,
-//         }
-//     }
-// }
-
-/// An iterator over text and block components of a [`Template`].
-#[derive(Debug, Clone)]
-pub struct TemplateParts<'a, 'fmt, A> {
-    inner: std::slice::Iter<'a, Part<'fmt, A>>,
-}
-
-impl<'a, 'fmt, A: Ast<'fmt>> TemplateParts<'a, 'fmt, A> {
-    /// A convenience function to render directly into a newly allocated `String`.
-    ///
-    /// This is equivalent to allocating a new `String` yourself and writing into it with
-    /// [`render_fmt`](Self::render_fmt).
-    pub fn render<C>(self, ctx: &C) -> Result<String, C::Error>
-    where
-        C: Context<Ast<'fmt> = A>,
+        T: AsRef<str>,
+        C: Manifest<A>,
     {
         use std::fmt::Write;
-
         let mut buf = String::new();
-        for part in self.inner {
-            match part {
-                Part::Text(s) => {
-                    buf.push_str(s);
+        for span in self.spans() {
+            match span {
+                Span::Text(s) => {
+                    buf.push_str(s.as_ref());
                 }
-                Part::Block(ast) => {
-                    let _ = write!(&mut buf, "{}", ctx.render(ast)?);
+                Span::Block(ast) => {
+                    let _ = write!(&mut buf, "{}", ctx.manifest(ast)?);
                 }
             }
         }
@@ -707,19 +692,24 @@ impl<'a, 'fmt, A: Ast<'fmt>> TemplateParts<'a, 'fmt, A> {
         Ok(buf)
     }
 
-    /// Write the parts into the provided [`io::Write`] implementation.
-    pub fn render_io<C, W>(self, ctx: &C, mut writer: W) -> Result<(), RenderError<C::Error>>
+    /// Write the compiled template into the provided [`io::Write`] implementation.
+    pub fn render_io<C, W>(&self, ctx: &C, mut writer: W) -> Result<(), RenderError<C::Error>>
     where
-        C: Context<Ast<'fmt> = A>,
+        T: AsRef<[u8]>,
+        C: Manifest<A>,
         W: io::Write,
     {
-        for part in self.inner {
-            match part {
-                Part::Text(s) => {
-                    writer.write_all(s.as_bytes())?;
+        for span in self.spans() {
+            match span {
+                Span::Text(s) => {
+                    writer.write_all(s.as_ref())?;
                 }
-                Part::Block(ast) => {
-                    write!(writer, "{}", ctx.render(ast).map_err(RenderError::Render)?)?;
+                Span::Block(ast) => {
+                    write!(
+                        writer,
+                        "{}",
+                        ctx.manifest(ast).map_err(RenderError::Render)?
+                    )?;
                 }
             }
         }
@@ -727,67 +717,34 @@ impl<'a, 'fmt, A: Ast<'fmt>> TemplateParts<'a, 'fmt, A> {
         Ok(())
     }
 
-    /// Write the parts into the provided [`fmt::Write`] implementation.
-    pub fn render_fmt<C, W>(self, ctx: &C, mut writer: W) -> Result<(), RenderError<C::Error>>
+    /// Write the compiled template into the provided [`fmt::Write`] implementation.
+    pub fn render_fmt<C, W>(&self, ctx: &C, mut writer: W) -> Result<(), RenderError<C::Error>>
     where
-        C: Context<Ast<'fmt> = A>,
+        T: AsRef<str>,
+        C: Manifest<A>,
         W: fmt::Write,
     {
-        for part in self.inner {
-            match part {
-                Part::Text(s) => {
-                    writer.write_str(s)?;
+        for span in self.spans() {
+            match span {
+                Span::Text(s) => {
+                    writer.write_str(s.as_ref())?;
                 }
-                Part::Block(ast) => {
-                    write!(writer, "{}", ctx.render(ast).map_err(RenderError::Render)?)?;
+                Span::Block(ast) => {
+                    write!(
+                        writer,
+                        "{}",
+                        ctx.manifest(ast).map_err(RenderError::Render)?
+                    )?;
                 }
             }
         }
 
         Ok(())
     }
-}
 
-impl<'a, 'fmt, A> Iterator for TemplateParts<'a, 'fmt, A> {
-    type Item = &'a Part<'fmt, A>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
-    }
-
-    fn count(self) -> usize
-    where
-        Self: Sized,
-    {
-        self.inner.count()
-    }
-
-    fn last(self) -> Option<Self::Item>
-    where
-        Self: Sized,
-    {
-        self.inner.last()
-    }
-
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.inner.nth(n)
+    /// Returns a slice of the template spans.
+    #[inline]
+    pub fn spans(&self) -> &[Span<T, A>] {
+        &self.inner
     }
 }
-
-impl<'a, 'fmt, A> DoubleEndedIterator for TemplateParts<'a, 'fmt, A> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.inner.next_back()
-    }
-}
-
-impl<'a, 'fmt, A> ExactSizeIterator for TemplateParts<'a, 'fmt, A> {
-    fn len(&self) -> usize {
-        self.inner.len()
-    }
-}
-
-impl<'a, 'fmt, A> std::iter::FusedIterator for TemplateParts<'a, 'fmt, A> {}
