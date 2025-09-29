@@ -1,11 +1,16 @@
 //! # Error types
+//!
+//! This module contains error types which are generic over some type parameter
+//! representing error which can occur from a particular [`Ast`](crate::Ast) or
+//! [`Context`](crate::Context) implementation.
 
 use std::{fmt, io, ops};
 
 /// An error while compiling a template string.
 ///
 /// The [`Ast`](SyntaxError::Ast) variant is emitted by the particular [`Ast`](crate::Ast)
-/// implementation which is used to parse the template string blocks.
+/// implementation which is used to parse the template string blocks. It is the associated
+/// [`Ast::Error`](crate::Ast::Error) type.
 #[derive(Debug, PartialEq)]
 pub enum SyntaxError<E> {
     /// The format parsing a block produced an error.
@@ -17,14 +22,18 @@ pub enum SyntaxError<E> {
 }
 
 /// An error while rendering a compiled template string.
+///
+/// The [`Render`](RenderError::Render) variant is emitted by the particular
+/// [`Context`](crate::Context) implementation which is used to parse the template string blocks.
+/// It is the associated [`Context::Error`](crate::Context::Error) type.
 #[derive(Debug)]
 pub enum RenderError<R> {
+    /// A value in a block could not be rendered.
+    Render(R),
     /// An error occured while writing to an [`io::Write`].
     IO(io::Error),
     /// An error occured while writing to a [`fmt::Write`].
     Fmt(fmt::Error),
-    /// A value in a block could not be rendered.
-    Custom(R),
 }
 
 /// Any error when compiling or rendering a template string.
@@ -57,5 +66,17 @@ impl<E, R> From<SyntaxError<E>> for Error<E, R> {
 impl<E, R> From<RenderError<R>> for Error<E, R> {
     fn from(err: RenderError<R>) -> Self {
         Self::Render(err)
+    }
+}
+
+impl<E, R> From<io::Error> for Error<E, R> {
+    fn from(err: io::Error) -> Self {
+        Self::Render(RenderError::IO(err))
+    }
+}
+
+impl<E, R> From<fmt::Error> for Error<E, R> {
+    fn from(err: fmt::Error) -> Self {
+        Self::Render(RenderError::Fmt(err))
     }
 }
