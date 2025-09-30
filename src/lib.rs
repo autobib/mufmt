@@ -220,6 +220,11 @@
 //! Moreover, since compilation is separate from rendering, you can report errors
 //! early, before rendering the template.
 //!
+//! Since a [`Template`] is generic over the text type, some aliases are provided which may be more
+//! convenient:
+//!
+//! - [`BorrowedTemplate`] and [`OwnedTemplate`].
+//!
 //! ### [`Oneshot`] struct
 //! If you know you will only render a template exactly once, you can use the [`Oneshot`] struct.
 //! It has similar same rendering methods as a [`Template`]:
@@ -1029,12 +1034,43 @@ impl<'fmt> Oneshot<'fmt> {
 /// ## Type parameters
 /// A `Template` is generic over two type parameters:
 ///
-/// - `T`: the template text type. Typically, `T = &str` (when you want to
-///   borrow from the template string) or `T = String` (when you want ownership). These
+/// - `T`: the template text type. For example, `T = &str` or `T = Box<str>`. These
 ///   cases are aliased in [`BorrowedTemplate`] and [`OwnedTemplate`]. `T` can
 ///   be any type which is `From<&'fmt str>` (when compiling) and `AsRef<str>` (when rendering).
 /// - `A`: the compiled format of the expression. When compiling from a template string, this must
 ///   implement [`Ast`].
+///
+/// For example, if you want ownership:
+/// ```
+/// use mufmt::Template;
+/// let template_str = "A {0}".to_owned();
+///
+/// // A template which owns all of its own data:
+/// // - text stored as `String`
+/// // - expressions compiled as `usize`
+/// let template = Template::<String, usize>::compile(&template_str).unwrap();
+///
+/// // we can safely drop the original data
+/// drop(template_str);
+///
+/// // and still use the template
+/// let mfst = vec!["cat"];
+/// assert_eq!(template.render(&mfst).unwrap(), "A cat");
+/// ```
+/// Or if you want to borrow:
+/// ```
+/// # use std::collections::HashMap;
+/// # use mufmt::Template;
+/// let template_str = "A {key}".to_owned();
+///
+/// // A template which borrows all of its data from the template string
+/// let template = Template::<&str, &str>::compile(&template_str).unwrap();
+///
+/// // drop(template_str); // uncomment for compile error
+///
+/// let mfst = HashMap::from([("key", "cat")]);
+/// assert_eq!(template.render(&mfst).unwrap(), "A cat");
+/// ```
 ///
 /// ## Template spans
 /// A template is internally a [`Vec`] of [`Span`]s with additional metadata.
@@ -1074,7 +1110,6 @@ impl<'fmt> Oneshot<'fmt> {
 ///
 /// assert_eq!(template.render(&mfst).unwrap(), "Hello Maija!");
 /// ```
-///
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Template<T, A> {
