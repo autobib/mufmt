@@ -334,6 +334,8 @@ pub trait Ast<'fmt>: Sized {
 ///
 /// If you must, you can work around this API restriction with [interior
 /// mutability](https://doc.rust-lang.org/reference/interior-mutability.html).
+///
+/// In order to maintain state which lasts for the duration of a single template, see [`ManifestMut`].
 pub trait Manifest<A> {
     /// An error produced when manifesting.
     type Error;
@@ -367,6 +369,107 @@ pub trait Manifest<A> {
             writer,
             "{}",
             self.manifest(ast).map_err(IORenderError::Render)?
+        )?)
+    }
+}
+
+impl<A, M: Manifest<A>> ManifestMut<A> for M {
+    type Error = M::Error;
+
+    type State = ();
+
+    #[inline]
+    fn init_state(&self) -> Self::State {}
+
+    #[inline]
+    fn manifest_mut(
+        &self,
+        ast: &A,
+        (): &mut Self::State,
+    ) -> Result<impl fmt::Display, Self::Error> {
+        self.manifest(ast)
+    }
+
+    #[inline]
+    fn write_fmt_mut<W: fmt::Write>(
+        &self,
+        ast: &A,
+        (): &mut Self::State,
+        writer: W,
+    ) -> Result<(), FmtRenderError<Self::Error>> {
+        self.write_fmt(ast, writer)
+    }
+
+    #[inline]
+    fn write_io_mut<W: io::Write>(
+        &self,
+        ast: &A,
+        (): &mut Self::State,
+        writer: W,
+    ) -> Result<(), IORenderError<Self::Error>> {
+        self.write_io(ast, writer)
+    }
+}
+
+/// A [`Manifest`] implementation which can maintain mutable state.
+///
+/// The mutable state is the associated [`ManifestMut::State`] type.
+/// The state is initialized before the template is rendered, using [`ManifestMut::init_state`],
+/// and is subsequently passed to each invocation of [`ManifestMut::manifest_mut`].
+///
+/// ## Render order
+/// The calls to `manifest_mut` are in the order in which expressions appear in the template.
+/// ```
+/// ```
+///
+/// ## Blanket implementation
+/// Every implementation of [`Manifest<A>`] automatically provides an implementation of [`ManifestMut<A>`].
+/// This prevents types from having conflicting implementations. The blanket implementation uses
+/// the unit type `()` for the state
+pub trait ManifestMut<A> {
+    /// An error produced when manifesting.
+    type Error;
+
+    /// Associated mutable state, which lasts for the duration of a single template.
+    type State;
+
+    /// Initialize mutable state before rendering the template.
+    fn init_state(&self) -> Self::State;
+
+    /// Convert the `Ast` to a type which can be displayed.
+    fn manifest_mut(
+        &self,
+        ast: &A,
+        state: &mut Self::State,
+    ) -> Result<impl fmt::Display, Self::Error>;
+
+    /// Write the `Ast` into a [`fmt::Write`] implementation.
+    fn write_fmt_mut<W: fmt::Write>(
+        &self,
+        ast: &A,
+        state: &mut Self::State,
+        mut writer: W,
+    ) -> Result<(), FmtRenderError<Self::Error>> {
+        Ok(write!(
+            writer,
+            "{}",
+            self.manifest_mut(ast, state)
+                .map_err(FmtRenderError::Render)?
+        )?)
+    }
+
+    /// Write the `Ast` into a [`io::Write`] implementation.
+    fn write_io_mut<W: io::Write>(
+        &self,
+        ast: &A,
+        state: &mut Self::State,
+        mut writer: W,
+    ) -> Result<(), IORenderError<Self::Error>> {
+        Ok(write!(
+            writer,
+            "{}",
+            self.manifest_mut(ast, state)
+                .map_err(IORenderError::Render)?
         )?)
     }
 }
@@ -724,18 +827,24 @@ impl<'fmt> Oneshot<'fmt> {
     ///
     /// This is equivalent to allocating a new `String` yourself and writing into it with
     /// [`render_fmt`](Self::render_fmt).
-    pub fn render<A, M>(mut self, mfst: &M) -> Result<String, Error<A::Error, M::Error>>
+    pub fn render<A, M>(self, mfst: &M) -> Result<String, Error<A::Error, M::Error>>
     where
         A: Ast<'fmt>,
-        M: Manifest<A>,
+        M: ManifestMut<A>,
     {
         use std::fmt::Write as _;
         let mut buf = String::new();
-        while let Some(spanned) = self.next_span()? {
-            match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
+
+        let mut state = mfst.init_state();
+        for span in self.spans::<A>() {
+            match span? {
                 Span::Text(s) => buf.push_str(s),
                 Span::Expr(ast) => {
-                    let _ = write!(&mut buf, "{}", mfst.manifest(&ast).map_err(Error::Render)?);
+                    let _ = write!(
+                        &mut buf,
+                        "{}",
+                        mfst.manifest_mut(&ast, &mut state).map_err(Error::Render)?
+                    );
                 }
             }
         }
@@ -748,20 +857,21 @@ impl<'fmt> Oneshot<'fmt> {
     /// The writer is not flushed unless the [`Manifest`] implementation overrides the default
     /// [`Manifest::write_io`] implementation to manually flush the writer.
     pub fn render_io<A, M, W>(
-        mut self,
+        self,
         mfst: &M,
         mut writer: W,
     ) -> Result<(), Error<A::Error, M::Error>>
     where
         A: Ast<'fmt>,
-        M: Manifest<A>,
+        M: ManifestMut<A>,
         W: io::Write,
     {
-        while let Some(spanned) = self.next_span()? {
-            match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
+        let mut state = mfst.init_state();
+        for span in self.spans::<A>() {
+            match span? {
                 Span::Text(s) => writer.write_all(s.as_bytes())?,
                 Span::Expr(ast) => {
-                    mfst.write_io(&ast, &mut writer)?;
+                    mfst.write_io_mut(&ast, &mut state, &mut writer)?;
                 }
             }
         }
@@ -771,20 +881,21 @@ impl<'fmt> Oneshot<'fmt> {
 
     /// Write the template into the provided [`fmt::Write`] implementation.
     pub fn render_fmt<A, M, W>(
-        mut self,
+        self,
         mfst: &M,
         mut writer: W,
     ) -> Result<(), Error<A::Error, M::Error>>
     where
         A: Ast<'fmt>,
-        M: Manifest<A>,
+        M: ManifestMut<A>,
         W: fmt::Write,
     {
-        while let Some(spanned) = self.next_span()? {
-            match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
+        let mut state = mfst.init_state();
+        for span in self.spans::<A>() {
+            match span? {
                 Span::Text(s) => writer.write_str(s)?,
                 Span::Expr(ast) => {
-                    mfst.write_fmt(&ast, &mut writer)?;
+                    mfst.write_fmt_mut(&ast, &mut state, &mut writer)?;
                 }
             }
         }
@@ -873,7 +984,7 @@ impl<'fmt> Oneshot<'fmt> {
                         let res = Ok(Some(IndexedSpan {
                             span: Span::Text(
                                 // SAFETY: text_start is a valid char offset
-                                from_utf8_unchecked(&self.template.get_unchecked(text_start..))
+                                from_utf8_unchecked(self.template.get_unchecked(text_start..))
                                     .into(),
                             ),
                             offset: text_start,
@@ -1153,17 +1264,19 @@ impl<T, A> Template<T, A> {
     pub fn render<M>(&self, mfst: &M) -> Result<String, M::Error>
     where
         T: AsRef<str>,
-        M: Manifest<A>,
+        M: ManifestMut<A>,
     {
         use std::fmt::Write;
         let mut buf = String::new();
+
+        let mut state = mfst.init_state();
         for span in self.spans() {
             match span {
                 Span::Text(s) => {
                     buf.push_str(s.as_ref());
                 }
                 Span::Expr(ast) => {
-                    let _ = write!(&mut buf, "{}", mfst.manifest(ast)?);
+                    let _ = write!(&mut buf, "{}", mfst.manifest_mut(ast, &mut state)?);
                 }
             }
         }
@@ -1178,16 +1291,17 @@ impl<T, A> Template<T, A> {
     pub fn render_io<M, W>(&self, mfst: &M, mut writer: W) -> Result<(), IORenderError<M::Error>>
     where
         T: AsRef<[u8]>,
-        M: Manifest<A>,
+        M: ManifestMut<A>,
         W: io::Write,
     {
+        let mut state = mfst.init_state();
         for span in self.spans() {
             match span {
                 Span::Text(s) => {
                     writer.write_all(s.as_ref())?;
                 }
                 Span::Expr(ast) => {
-                    mfst.write_io(ast, &mut writer)?;
+                    mfst.write_io_mut(ast, &mut state, &mut writer)?;
                 }
             }
         }
@@ -1199,16 +1313,17 @@ impl<T, A> Template<T, A> {
     pub fn render_fmt<M, W>(&self, mfst: &M, mut writer: W) -> Result<(), FmtRenderError<M::Error>>
     where
         T: AsRef<str>,
-        M: Manifest<A>,
+        M: ManifestMut<A>,
         W: fmt::Write,
     {
+        let mut state = mfst.init_state();
         for span in self.spans() {
             match span {
                 Span::Text(s) => {
                     writer.write_str(s.as_ref())?;
                 }
                 Span::Expr(ast) => {
-                    mfst.write_fmt(ast, &mut writer)?;
+                    mfst.write_fmt_mut(ast, &mut state, &mut writer)?;
                 }
             }
         }
