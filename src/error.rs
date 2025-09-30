@@ -6,10 +6,7 @@
 //!   which may result from a particular [`Ast`](crate::Ast) or [`Manifest`](crate::Manifest)
 //!   implementation.
 
-use std::{fmt, io, ops::Range};
-
-// TODO: work out a way for the errors to contain span information relative to the original
-// template
+use std::{convert::Infallible, fmt, io, ops::Range};
 
 /// An error while compiling a template string.
 ///
@@ -87,6 +84,8 @@ pub enum SyntaxErrorKind<E> {
 /// [`Manifest`](crate::Manifest) implementation which is used to parse the template string
 /// expressions.
 /// It is the associated [`Manifest::Error`](crate::Manifest::Error) type.
+///
+/// For infallible rendering, there is a is a `From<IORenderError<Infallible>>` implementation for `io::Error`.
 #[derive(Debug)]
 pub enum IORenderError<R> {
     /// A value in an expression could not be rendered.
@@ -101,12 +100,21 @@ impl<R> From<io::Error> for IORenderError<R> {
     }
 }
 
+impl From<IORenderError<Infallible>> for io::Error {
+    fn from(err: IORenderError<Infallible>) -> Self {
+        let IORenderError::IO(io) = err;
+        io
+    }
+}
+
 /// An error while rendering a compiled template string into a [`fmt::Write`].
 ///
 /// The [`Render`](FmtRenderError::Render) variant is emitted by the particular
 /// [`Manifest`](crate::Manifest) implementation which is used to parse the template string
 /// expressions.
 /// It is the associated [`Manifest::Error`](crate::Manifest::Error) type.
+///
+/// For infallible rendering, there is a is a `From<FmtRenderError<Infallible>>` implementation for `fmt::Error`.
 #[derive(Debug)]
 pub enum FmtRenderError<R> {
     /// A value in an expression could not be rendered.
@@ -118,6 +126,13 @@ pub enum FmtRenderError<R> {
 impl<R> From<fmt::Error> for FmtRenderError<R> {
     fn from(err: fmt::Error) -> Self {
         Self::Fmt(err)
+    }
+}
+
+impl From<FmtRenderError<Infallible>> for fmt::Error {
+    fn from(err: FmtRenderError<Infallible>) -> Self {
+        let FmtRenderError::Fmt(fmt) = err;
+        fmt
     }
 }
 
