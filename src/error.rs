@@ -6,24 +6,79 @@
 //!   which may result from a particular [`Ast`](crate::Ast) or [`Manifest`](crate::Manifest)
 //!   implementation.
 
-use std::{fmt, io, ops};
+use std::{fmt, io, ops::Range};
 
 // TODO: work out a way for the errors to contain span information relative to the original
 // template
 
 /// An error while compiling a template string.
 ///
-/// The [`Ast`](SyntaxError::Ast) variant is emitted by the particular [`Ast`](crate::Ast)
+/// A syntax error also contains range information concerning the location in the template string
+/// from which this syntax error was originally parsed. See [`SyntaxError::locate`] for more
+/// detail.
+#[derive(Debug, PartialEq, Clone)]
+pub struct SyntaxError<E> {
+    /// The type of syntax error which occured.
+    pub kind: SyntaxErrorKind<E>,
+    /// The range in the template string at which the error occured.
+    pub(crate) span: Range<usize>,
+}
+
+impl<E> SyntaxError<E> {
+    /// Locate the syntax error inside the original template string.
+    ///
+    /// The returned range is guaranteed to correspond to a valid slice of the original template string,
+    /// and represents the location at which the error was produced.
+    ///
+    /// # Examples
+    /// An expression failed to parse: recover the original expression text.
+    /// ```
+    /// use mufmt::Template;
+    ///
+    /// let s = "{ not a usize}";
+    /// let err = Template::<&str, usize>::compile(s).unwrap_err();
+    /// assert_eq!(&s[err.locate()], " not a usize");
+    /// ```
+    /// Get the index of an unclosed delimeter.
+    /// ```
+    /// # use mufmt::Template;
+    /// let err = Template::<&str, &str>::compile("extra}").unwrap_err();
+    /// assert_eq!(err.locate().start, 5);
+    /// ```
+    /// Get all of the trailing characters from an unclosed expression.
+    /// ```
+    /// # use mufmt::Template;
+    /// let s = " {# 12 }";
+    /// let err = Template::<&str, usize>::compile(s).unwrap_err();
+    /// assert_eq!(&s[err.locate()], "{# 12 }");
+    /// ```
+    ///
+    /// # Ranges
+    /// The provided ranges depend on the error kind:
+    ///
+    /// Syntax Error Kind | Range
+    /// ------------------|------
+    /// [`SyntaxErrorKind::InvalidExpr`] | the contents of the expression before trimming whitespace, but not including the brackets.
+    /// [`SyntaxErrorKind::ExtraBracket`] | a range of length 1 containing precisely the extra bracket.
+    /// [`SyntaxErrorKind::UnclosedExpr`] | a range starting before the expression bracket and terminating at the end of the template string.
+    pub fn locate(&self) -> Range<usize> {
+        self.span.clone()
+    }
+}
+
+/// The type of syntax error which occured.
+///
+/// The [`SyntaxErrorKind::InvalidExpr`] variant is emitted by the particular [`Ast`](crate::Ast)
 /// implementation which is used to parse the template string expressions. It is the associated
 /// [`Ast::Error`](crate::Ast::Error) type.
-#[derive(Debug, PartialEq)]
-pub enum SyntaxError<E> {
+#[derive(Debug, PartialEq, Clone)]
+pub enum SyntaxErrorKind<E> {
     /// The format parsing a expression produced an error.
-    Ast(E, ops::Range<usize>),
+    InvalidExpr(E),
     /// A closing bracket, without a matching opening bracket.
-    ExtraBracket(usize),
+    ExtraBracket,
     /// An expression was started, but not closed.
-    UnclosedExpr(usize),
+    UnclosedExpr,
 }
 
 /// An error while rendering a compiled template string into an [`io::Write`].
@@ -82,7 +137,7 @@ pub enum Error<E, R> {
     Render(R),
     /// An error occured while writing to an [`io::Write`].
     IO(io::Error),
-    /// An error occured while writing to an [`fmt::Write`].
+    /// An error occured while writing to a [`fmt::Write`].
     Fmt(fmt::Error),
 }
 

@@ -90,8 +90,8 @@
 //!
 //! 1. The template not inside an expression are referred to as *text*,  and the parts inside an expression are
 //!    referred to as *expressions*.
-//! 2. expressions are whitespace trimmed according to the rules of [`trim`](str::trim).
-//! 3. To include brackets inside *text*, repeating the bracket (like `{{`) results in text
+//! 2. Expressions are whitespace trimmed according to the rules of [`trim`](str::trim).
+//! 3. To include brackets inside *text*, doubled brackets (like `{{` and `}}`) results in text
 //!    consisting of a single bracket.
 //! 4. To include brackets inside *expressions*, you can use *extended expression delimiters*: the initial
 //!    `{` of an expression may be followed by any number of `#` characters. Then, the expression can only be
@@ -109,7 +109,7 @@
 //! ## API overview
 //! Broadly speaking, template rendering is split into two independent phases.
 //!
-//! 1. A template string `"Hello {name}"` is compiled by the μfmt parsing rules and the expression
+//! 1. A template string `"Hello {name}"` is compiled by the μfmt [syntax](#syntax) and the expression
 //!    parsing rules defined by the [`Ast`] implementation. The compiled representation is a
 //!    [`Template`] and an error during this phase is a [`SyntaxError`].
 //! 2. The compiled template is combined with additional data via a [`Manifest`]
@@ -176,6 +176,7 @@
 //! #     fn manifest(&self, ast: &A) -> Result<impl Display, Self::Error>;
 //! # }
 //! use mufmt::types::IndexOutOfRange;
+//!
 //! impl<T: Display> Manifest<usize> for Vec<T> {
 //!     type Error = IndexOutOfRange;
 //!
@@ -188,6 +189,10 @@
 //! also from the `ast`.
 //!
 //! ## Template overview
+//! When you want to work with a template string, you have essentially three options:
+//!
+//! - [`Template`], [`Oneshot`], and [`TemplateSpans`].
+//!
 //!
 //! ### [`Template`] struct
 //! By default, you should use the [`Template`] struct. This contains a compiled representation of
@@ -203,7 +208,7 @@
 //!   allocation.
 //!
 //! These methods do not consume the template which allows repeated rendering of the same template.
-//! A second benefit is that since compilation is separate from rendering, you can report errors
+//! Moreover, since compilation is separate from rendering, you can report errors
 //! early, before rendering the template.
 //!
 //! ### [`Oneshot`] struct
@@ -229,9 +234,10 @@
 //! This is an iterator over `Result<Span, SyntaxError>`, where a [`Span`] represents a contiguous
 //! substring of the template string. The key additional feature is [error
 //! recovery](TemplateSpans#error-recovery): this iterator can recover from non-fatal parsing
-//! errors (such as invalid expressions, for the provided `Ast`).
+//! errors, such as expressions which are invalid for the provided `Ast`.
 //!
-//! If you already have a [`Template`], the spans can be obtained using [`Template::spans`].
+//! If you already have a [`Template`], the spans can be obtained using [`Template::spans`]
+//! (without any syntax errors). The spans can also be obtained with [`Oneshot::spans`].
 
 #![deny(missing_docs)]
 
@@ -240,7 +246,7 @@ mod error;
 mod tests;
 pub mod types;
 
-pub use error::{Error, FmtRenderError, IORenderError, SyntaxError};
+pub use error::{Error, FmtRenderError, IORenderError, SyntaxError, SyntaxErrorKind};
 
 use memchr::{memchr, memchr2, memmem};
 use std::{convert::Infallible, fmt, io, marker::PhantomData, str::from_utf8_unchecked};
@@ -382,8 +388,7 @@ impl<T, A> Span<T, A> {
     }
 }
 
-/// An intermediate representation consisting of a raw, unparsed span including whitespace,
-/// starting at the provided offset from the source string.
+/// A `Span` augumented with the index in the original template string at which the span starts.
 #[derive(Debug, PartialEq)]
 struct IndexedSpan<'fmt, T> {
     span: Span<T, &'fmt str>,
@@ -396,10 +401,10 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
     fn try_from(spanned: IndexedSpan<'fmt, T>) -> Result<Self, Self::Error> {
         Ok(match spanned.span {
             Span::Text(s) => Self::Text(s),
-            Span::Expr(s) => Self::Expr(
-                A::from_expr(s.trim())
-                    .map_err(|e| SyntaxError::Ast(e, spanned.offset..spanned.offset + s.len()))?,
-            ),
+            Span::Expr(s) => Self::Expr(A::from_expr(s.trim()).map_err(|e| SyntaxError {
+                kind: SyntaxErrorKind::InvalidExpr(e),
+                span: spanned.offset..spanned.offset + s.len(),
+            })?),
         })
     }
 }
@@ -426,22 +431,30 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 ///
 /// Here is an example illustrating this behaviour.
 /// ```
-/// # use mufmt::{Span, SyntaxError, TemplateSpans};
+/// # use mufmt::{Span, SyntaxErrorKind, TemplateSpans};
 /// let mut spans_iter = TemplateSpans::<usize>::new("{12} }and {invalid}");
 ///
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Expr(12))));
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text(" "))));
-/// assert!(matches!(spans_iter.next(), Some(Err(SyntaxError::ExtraBracket(_)))));
+/// assert_eq!(
+///     spans_iter.next().unwrap().unwrap_err().kind,
+///     SyntaxErrorKind::ExtraBracket,
+/// );
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("and "))));
-/// assert!(matches!(spans_iter.next(), Some(Err(SyntaxError::Ast(_, _)))));
-/// assert!(spans_iter.next().is_none());
+/// assert!(matches!(
+///     spans_iter.next().unwrap().unwrap_err().kind,
+///     SyntaxErrorKind::InvalidExpr(_),
+/// ));
 /// ```
 /// Unclosed expressions cannot be recovered.
 /// ```
-/// # use mufmt::{Span, SyntaxError, TemplateSpans};
+/// # use mufmt::{Span, SyntaxErrorKind, TemplateSpans};
 /// let mut spans_iter = TemplateSpans::<&str>::new("{unclosed");
 ///
-/// assert_eq!(spans_iter.next(), Some(Err(SyntaxError::UnclosedExpr(0))));
+/// assert_eq!(
+///     spans_iter.next().unwrap().unwrap_err().kind,
+///     SyntaxErrorKind::UnclosedExpr,
+/// );
 /// // the entire template string was consumed trying to find the closing bracket
 /// assert!(spans_iter.next().is_none());
 /// ```
@@ -618,7 +631,7 @@ impl<'fmt> Oneshot<'fmt> {
 
     /// Consume this template, checking if the syntax is valid for the provided [`Ast`].
     ///
-    /// This method reports the first error encountered. If you want to report as many errors as
+    /// This method only reports the first error encountered. If you want to report as many errors as
     /// possible, use a [`TemplateSpans`] iterator instead which supports [error
     /// recovery](TemplateSpans#error-recovery).
     ///
@@ -813,9 +826,12 @@ impl<'fmt> Oneshot<'fmt> {
                 }
                 [b'}', ..] => {
                     // unexpected closing bracket which is not escaped
-                    let err_loc = self.cursor;
+                    let err_start = self.cursor;
                     self.cursor += 1;
-                    Err(SyntaxError::ExtraBracket(err_loc))
+                    Err(SyntaxError {
+                        span: err_start..self.cursor,
+                        kind: SyntaxErrorKind::ExtraBracket,
+                    })
                 }
                 [b'{', b'#', ..] => {
                     // extended expression
@@ -842,9 +858,12 @@ impl<'fmt> Oneshot<'fmt> {
                             }));
                         }
                     }
-                    let err_loc = self.cursor;
+                    let err_start = self.cursor;
                     self.cursor = self.template.len();
-                    Err(SyntaxError::UnclosedExpr(err_loc))
+                    Err(SyntaxError {
+                        span: err_start..self.cursor,
+                        kind: SyntaxErrorKind::UnclosedExpr,
+                    })
                 }
                 [b'{', ..] => {
                     // normal expression
@@ -863,9 +882,12 @@ impl<'fmt> Oneshot<'fmt> {
                         }
                         None => {
                             // the expression is unclosed, so there is nothing else we can do
-                            let err_loc = self.cursor;
+                            let err_start = self.cursor;
                             self.cursor = self.template.len();
-                            Err(SyntaxError::UnclosedExpr(err_loc))
+                            Err(SyntaxError {
+                                span: err_start..self.cursor,
+                                kind: SyntaxErrorKind::UnclosedExpr,
+                            })
                         }
                     }
                 }

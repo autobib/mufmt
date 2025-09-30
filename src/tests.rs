@@ -69,13 +69,19 @@ fn parse_err() {
     );
     assert_eq!(
         oneshot.next_span::<&str, ()>(),
-        Err(SyntaxError::UnclosedExpr(1))
+        Err(SyntaxError {
+            span: 1..2,
+            kind: SyntaxErrorKind::UnclosedExpr
+        })
     );
 
     let mut oneshot = Oneshot::new("{# }");
     assert_eq!(
         oneshot.next_span::<&str, ()>(),
-        Err(SyntaxError::UnclosedExpr(0))
+        Err(SyntaxError {
+            span: 0..4,
+            kind: SyntaxErrorKind::UnclosedExpr
+        })
     );
 
     let mut oneshot = Oneshot::new(" }");
@@ -88,8 +94,30 @@ fn parse_err() {
     );
     assert_eq!(
         oneshot.next_span::<&str, ()>(),
-        Err(SyntaxError::ExtraBracket(1))
+        Err(SyntaxError {
+            span: 1..2,
+            kind: SyntaxErrorKind::ExtraBracket
+        })
     );
+}
+
+#[test]
+fn parse_err_location() {
+    let s = "{# bad  #}";
+    let mut template_spans = TemplateSpans::<usize>::new(s);
+    let err = template_spans.next().unwrap().unwrap_err();
+
+    let usize_err = "bad".parse::<usize>().unwrap_err();
+
+    assert_eq!(
+        err,
+        SyntaxError {
+            span: 2..8,
+            kind: SyntaxErrorKind::InvalidExpr(usize_err),
+        }
+    );
+
+    assert_eq!(&s[err.locate()], " bad  ");
 }
 
 #[test]

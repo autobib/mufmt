@@ -88,11 +88,11 @@ use std::num::{IntErrorKind, ParseIntError};
 pub use ast::{BoundedInt, IgnoredAny, ast_from_str};
 
 /// An index is out of range.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IndexOutOfRange(pub usize);
 
 /// A key is missing.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyMissing;
 
 /// An expression was expected to be empty.

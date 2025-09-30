@@ -11,18 +11,18 @@ use std::{
 use super::{BoundedInt, IndexOutOfRange, KeyMissing};
 use crate::Manifest;
 
-impl<A, F, D: Display, E> Manifest<A> for F
+impl<A, F, T: Display, E> Manifest<A> for F
 where
-    F: Fn(&A) -> Result<D, E>,
+    F: Fn(&A) -> Result<T, E>,
 {
     type Error = E;
 
     fn manifest(&self, ast: &A) -> Result<impl Display, Self::Error> {
-        (self)(ast)
+        self(ast)
     }
 }
 
-macro_rules! impl_index_context {
+macro_rules! impl_index_manifest {
     ($($ast:ty),*) => {
         $(
             impl<T: Display> Manifest<usize> for $ast {
@@ -36,33 +36,31 @@ macro_rules! impl_index_context {
     };
 }
 
-impl_index_context!(Vec<T>, [T], &[T], &mut [T], VecDeque<T>);
+impl_index_manifest!(Vec<T>, [T], &[T], &mut [T], VecDeque<T>);
 
-impl<Q, K, V> Manifest<Q> for HashMap<K, V>
-where
-    K: Borrow<Q> + Eq + Hash,
-    Q: Hash + Eq,
-    V: Display,
-{
-    type Error = KeyMissing;
+macro_rules! impl_map_manifest {
+    ($($name:ty => { $($bound:tt)* }),*) => {
+        $(
+            impl<Q, K, V> Manifest<Q> for $name
+            where
+                K: Borrow<Q> + $($bound)*,
+                Q: $($bound)*,
+                V: Display,
+                {
+                    type Error = KeyMissing;
 
-    fn manifest(&self, ast: &Q) -> Result<impl Display, Self::Error> {
-        self.get(ast).ok_or(KeyMissing)
-    }
+                    fn manifest(&self, ast: &Q) -> Result<impl Display, Self::Error> {
+                        self.get(ast).ok_or(KeyMissing)
+                    }
+                }
+        )*
+    };
 }
 
-impl<Q, K, V> Manifest<Q> for BTreeMap<K, V>
-where
-    K: Borrow<Q> + Ord,
-    Q: Ord,
-    V: Display,
-{
-    type Error = KeyMissing;
-
-    fn manifest(&self, ast: &Q) -> Result<impl Display, Self::Error> {
-        self.get(ast).ok_or(KeyMissing)
-    }
-}
+impl_map_manifest!(
+    HashMap<K, V> => { Eq + Hash },
+    BTreeMap<K, V> => { Ord }
+);
 
 impl<const N: usize, T: Display> Manifest<usize> for [T; N] {
     type Error = IndexOutOfRange;
