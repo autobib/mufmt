@@ -12,6 +12,51 @@ use std::{
 use super::{IndexOutOfRange, NotEmpty, ParseBoundedIntError};
 use crate::Ast;
 
+/// A convenience macro to implement [`Ast`] for a type which implements
+/// [`FromStr`](std::str::FromStr).
+///
+/// Note that `FromStr` has no associated lifetime, so such an implementation cannot borrow from the
+/// original string.
+///
+/// ## Example
+/// ```
+/// enum Size {
+///     Small,
+///     Big,
+/// }
+///
+/// impl std::str::FromStr for Size {
+///     type Err = String;
+///
+///     fn from_str(s: &str) -> Result<Self, Self::Err> {
+///         match s {
+///             "small" => Ok(Self::Small),
+///             "big" => Ok(Self::Big),
+///             s => Err(format!("Invalid size: {s}")),
+///         }
+///     }
+/// }
+///
+/// mufmt::types::ast_from_str!(Size);
+/// // Now, `Size` implements `Ast`.
+/// ```
+#[macro_export]
+macro_rules! ast_from_str {
+    ($($ast:ty),*) => {
+        $(
+            impl $crate::Ast<'_> for $ast {
+                type Error = <$ast as ::std::str::FromStr>::Err;
+
+                fn from_expr(s: &str) -> Result<Self, Self::Error> {
+                    ::std::str::FromStr::from_str(s)
+                }
+            }
+        )*
+    };
+}
+
+pub use ast_from_str;
+
 /// A `usize` in the range `0..N`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BoundedInt<const N: usize> {
@@ -87,51 +132,6 @@ impl<const N: usize> Ast<'_> for BoundedInt<N> {
         }
     }
 }
-
-/// A convenience macro to implement [`Ast`] for a type which implements
-/// [`FromStr`](std::str::FromStr).
-///
-/// Note that `FromStr` has no associated lifetime, so such an implementation cannot borrow from the
-/// original string.
-///
-/// ## Example
-/// ```
-/// enum Size {
-///     Small,
-///     Big,
-/// }
-///
-/// impl std::str::FromStr for Size {
-///     type Err = String;
-///
-///     fn from_str(s: &str) -> Result<Self, Self::Err> {
-///         match s {
-///             "small" => Ok(Self::Small),
-///             "big" => Ok(Self::Big),
-///             s => Err(format!("Invalid size: {s}")),
-///         }
-///     }
-/// }
-///
-/// mufmt::types::ast_from_str!(Size);
-/// // Now, `Size` implements `Ast`.
-/// ```
-#[macro_export]
-macro_rules! ast_from_str {
-    ($($ast:ty),*) => {
-        $(
-            impl $crate::Ast<'_> for $ast {
-                type Error = <$ast as ::std::str::FromStr>::Err;
-
-                fn from_expr(s: &str) -> Result<Self, Self::Error> {
-                    ::std::str::FromStr::from_str(s)
-                }
-            }
-        )*
-    };
-}
-
-pub use ast_from_str;
 
 ast_from_str!(
     // str types
