@@ -26,41 +26,64 @@ pub enum SyntaxError<E> {
     UnclosedExpr(usize),
 }
 
-/// An error while rendering a compiled template string.
+/// An error while rendering a compiled template string into an [`io::Write`].
 ///
-/// The [`Render`](RenderError::Render) variant is emitted by the particular
+/// The [`Render`](IORenderError::Render) variant is emitted by the particular
 /// [`Manifest`](crate::Manifest) implementation which is used to parse the template string
 /// expressions.
 /// It is the associated [`Manifest::Error`](crate::Manifest::Error) type.
 #[derive(Debug)]
-pub enum RenderError<R> {
+pub enum IORenderError<R> {
     /// A value in an expression could not be rendered.
     Render(R),
     /// An error occured while writing to an [`io::Write`].
     IO(io::Error),
-    /// An error occured while writing to a [`fmt::Write`].
-    Fmt(fmt::Error),
 }
 
-/// Any error when compiling or rendering a template string.
-#[derive(Debug)]
-pub enum Error<E, R> {
-    /// An error when compiling the template string.
-    Syntax(SyntaxError<E>),
-    /// An error when rendering the compiled template string.
-    Render(RenderError<R>),
-}
-
-impl<R> From<io::Error> for RenderError<R> {
+impl<R> From<io::Error> for IORenderError<R> {
     fn from(err: io::Error) -> Self {
         Self::IO(err)
     }
 }
 
-impl<R> From<fmt::Error> for RenderError<R> {
+/// An error while rendering a compiled template string into a [`fmt::Write`].
+///
+/// The [`Render`](FmtRenderError::Render) variant is emitted by the particular
+/// [`Manifest`](crate::Manifest) implementation which is used to parse the template string
+/// expressions.
+/// It is the associated [`Manifest::Error`](crate::Manifest::Error) type.
+#[derive(Debug)]
+pub enum FmtRenderError<R> {
+    /// A value in an expression could not be rendered.
+    Render(R),
+    /// An error occured while writing to a [`fmt::Write`].
+    Fmt(fmt::Error),
+}
+
+impl<R> From<fmt::Error> for FmtRenderError<R> {
     fn from(err: fmt::Error) -> Self {
         Self::Fmt(err)
     }
+}
+
+/// A general error type capturing any error which could occur while compiling or rendering a
+/// template string.
+///
+/// This error type is used by the [`Oneshot`](crate::Oneshot) render methods, though it could also
+/// be useful for handling any error which might occur in this crate since it implements `From<T>`
+/// for the following types `T`:
+///
+/// - [`SyntaxError<E>`], [`io::Error`], [`fmt::Error`], [`IORenderError`], [`FmtRenderError`].
+#[derive(Debug)]
+pub enum Error<E, R> {
+    /// An error when compiling the template string.
+    Syntax(SyntaxError<E>),
+    /// A value in an expression could not be rendered.
+    Render(R),
+    /// An error occured while writing to an [`io::Write`].
+    IO(io::Error),
+    /// An error occured while writing to an [`fmt::Write`].
+    Fmt(fmt::Error),
 }
 
 impl<E, R> From<SyntaxError<E>> for Error<E, R> {
@@ -69,20 +92,32 @@ impl<E, R> From<SyntaxError<E>> for Error<E, R> {
     }
 }
 
-impl<E, R> From<RenderError<R>> for Error<E, R> {
-    fn from(err: RenderError<R>) -> Self {
-        Self::Render(err)
+impl<E, R> From<IORenderError<R>> for Error<E, R> {
+    fn from(err: IORenderError<R>) -> Self {
+        match err {
+            IORenderError::Render(r) => Self::Render(r),
+            IORenderError::IO(io_err) => Self::IO(io_err),
+        }
+    }
+}
+
+impl<E, R> From<FmtRenderError<R>> for Error<E, R> {
+    fn from(err: FmtRenderError<R>) -> Self {
+        match err {
+            FmtRenderError::Render(r) => Self::Render(r),
+            FmtRenderError::Fmt(fmt_err) => Self::Fmt(fmt_err),
+        }
     }
 }
 
 impl<E, R> From<io::Error> for Error<E, R> {
     fn from(err: io::Error) -> Self {
-        Self::Render(RenderError::IO(err))
+        Self::IO(err)
     }
 }
 
 impl<E, R> From<fmt::Error> for Error<E, R> {
     fn from(err: fmt::Error) -> Self {
-        Self::Render(RenderError::Fmt(err))
+        Self::Fmt(err)
     }
 }

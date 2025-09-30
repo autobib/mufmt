@@ -6,7 +6,7 @@
 //! format. μfmt also provides a number of built-in formats, backed by data stored in
 //! collection types like [`HashMap`](std::collections::HashMap) or [`Vec`].
 //!
-//! The main API entrypoints are [`Template`], [`Ast`], and [`Manifest`].
+//! The main API entrypoints are [`Ast`], [`Manifest`], and [`Template`].
 //! In short:
 //!
 //! - The [`Ast`] describes how to parse a template expression into a strongly typed format.
@@ -19,6 +19,8 @@
 //! - [Syntax](#syntax): to understand the global syntax rules
 //! - [`Ast` and `Manifest` overview](#api-overview): for a general overview of the core `Ast` and
 //!   `Manifest` traits
+//! - [`Template` overview](#template-overview): for an overview of the [`Template`] struct, and
+//!   its cousins [`Oneshot`] and [`TemplateSpans`].
 //! - The [`types`] module: for custom [`Ast`] and [`Manifest`] implementations and a documentation
 //!   of the implementations for the standard library.
 //!
@@ -39,9 +41,9 @@
 //! // The `Ast` is &str
 //! let template = BorrowedTemplate::<&str>::compile("Hello {name}!").unwrap();
 //! // The `Manifest` is `HashMap<str, str>`
-//! let ctx = HashMap::from([("name", "John")]);
+//! let mfst = HashMap::from([("name", "John")]);
 //!
-//! assert_eq!(template.render(&ctx).unwrap(), "Hello John!");
+//! assert_eq!(template.render(&mfst).unwrap(), "Hello John!");
 //! ```
 //! In this example, the `{name}` expression is parsed as a string: `"name"`. The parsing rules are
 //! defined by the [`Manifest`] implementation of the `HashMap`, which expects raw strings which
@@ -54,18 +56,18 @@
 //! # use mufmt::BorrowedTemplate;
 //! // we don't need a type annotation here since `Vec` only accepts `usize` as the key
 //! let template = BorrowedTemplate::compile("Letter: {1}").unwrap();
-//! let ctx = vec!["α", "β", "γ"];
+//! let mfst = vec!["α", "β", "γ"];
 //!
 //! let mut buf = String::new();
-//! template.render_fmt(&ctx, &mut buf).unwrap();
+//! template.render_fmt(&mfst, &mut buf).unwrap();
 //! assert_eq!(buf, "Letter: β");
 //!
 //! // we define a new context: but now, a `Vec<char>` instead of `Vec<&'static string>`
-//! let new_ctx = vec!['a', 'b', 'c'];
+//! let new_mfst = vec!['a', 'b', 'c'];
 //!
 //! // this works since (for `Vec`) the key type does not depend on the type in the container
 //! buf.clear();
-//! template.render_fmt(&new_ctx, &mut buf).unwrap();
+//! template.render_fmt(&new_mfst, &mut buf).unwrap();
 //! assert_eq!(buf, "Letter: b");
 //!
 //! // the intermediate syntax type is a `usize`, which is used to index into the vec
@@ -76,10 +78,10 @@
 //! Passing a template with the incorrect expression type will result in a compilation error.
 //! ```compile_fail
 //! # use mufmt::BorrowedTemplate;
-//! let ctx = HashMap::from([("123", "456")]);
+//! let mfst = HashMap::from([("123", "456")]);
 //! // a `HashMap` expects an `&str`, not a `usize`
 //! let template = BorrowedTemplate::<usize>::compile("Number: {123}").unwrap();
-//! template.render(&ctx);
+//! template.render(&mfst);
 //! ```
 //!
 //! ## Syntax
@@ -112,7 +114,7 @@
 //!    [`Template`] and an error during this phase is a [`SyntaxError`].
 //! 2. The compiled template is combined with additional data via a [`Manifest`]
 //!    implementation to obtain a type which can be displayed. An error during this phase
-//!    is a [`RenderError`].
+//!    is the associated error type [`Manifest::Error`].
 //!
 //! The precise dividing line between where the `Ast` parsing ends and template rendering begins is
 //! intentionally unspecified and depends on the use-case. However, a good rule of thumb
@@ -184,6 +186,52 @@
 //! ```
 //! The returned `Display` implementation is ephemeral. It may borrow from `self` and
 //! also from the `ast`.
+//!
+//! ## Template overview
+//!
+//! ### [`Template`] struct
+//! By default, you should use the [`Template`] struct. This contains a compiled representation of
+//! a template string, with expressions compiled according to the rules of the associated [`Ast`] typed.
+//!
+//! You can construct a [`Template`] from a template string using [`Template::compile`], which will
+//! immediately report syntax errors. Then, the [`Template`] struct can be rendered using three methods:
+//!
+//! - [`Template::render`], for convenient rendering directly into a [`String`].
+//! - [`Template::render_io`], when you have a [`io::Write`] buffer and want to avoid an
+//!   allocation.
+//! - [`Template::render_fmt`], when you have a [`fmt::Write`] buffer and want to avoid an
+//!   allocation.
+//!
+//! These methods do not consume the template which allows repeated rendering of the same template.
+//! A second benefit is that since compilation is separate from rendering, you can report errors
+//! early, before rendering the template.
+//!
+//! ### [`Oneshot`] struct
+//! If you know you will only render a template exactly once, you can use the [`Oneshot`] struct.
+//! It has similar same rendering methods as a [`Template`]:
+//!
+//! - [`Oneshot::render`], [`Oneshot::render_io`], and [`Oneshot::render_fmt`]
+//!
+//! The main gain is that we skip the intermediate compiled representation. This can result in
+//! reduced memory usage if the template is extremely large.
+//!
+//! The main downside is that the error types are more general (returns a global [`Error`], rather
+//! than an error type specialized to the method) and the template cannot be reused.
+//!
+//! It also exposes validation methods to check syntax without rendering the template:
+//!
+//! - [`Oneshot::validate`] and [`Oneshot::validate_any`]
+//!
+//! ### [`TemplateSpans`] iterator
+//! Finally, if you actually want to work with the template directly and are not interested in
+//! rendering, you can use the [`TemplateSpans`] iterator.
+//!
+//! This is an iterator over `Result<Span, SyntaxError>`, where a [`Span`] represents a contiguous
+//! substring of the template string. The key additional feature is [error
+//! recovery](TemplateSpans#error-recovery): this iterator can recover from non-fatal parsing
+//! errors (such as invalid expressions, for the provided `Ast`).
+//!
+//! If you already have a [`Template`], the spans can be obtained using [`Template::spans`].
 
 #![deny(missing_docs)]
 
@@ -192,12 +240,14 @@ mod error;
 mod tests;
 pub mod types;
 
-pub use error::{Error, RenderError, SyntaxError};
+pub use error::{Error, FmtRenderError, IORenderError, SyntaxError};
 
 use memchr::{memchr, memchr2, memmem};
-use std::{fmt, io, str::from_utf8_unchecked};
+use std::{convert::Infallible, fmt, io, marker::PhantomData, str::from_utf8_unchecked};
 
 /// A typed representation of an expression which does not interpret the contents.
+///
+/// Often, you can use a [provided implementation](types#ast-implementations).
 ///
 /// The role of an `Ast` is to perform as much validation as possible, without any knowledge of the
 /// [`Manifest`] which may later use it. The correct balance here depends, of course, on the
@@ -246,22 +296,72 @@ pub trait Ast<'fmt>: Sized {
     fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error>;
 }
 
-/// Manifest provided to render the `Ast` to a new string.
+/// A manifest knows how to render an [`Ast`] to a new string.
+///
+/// Often, you can use a [provided implementation](types#manifest-implementations).
+///
+/// Manifest implementations often contain state which is defined at runtime to determine how the
+/// string is compiled.
+///
+/// ## No exclusive self reference
+/// A `Manifest` implementation is not provided an exclusive self-reference. There are two reasons
+/// for this:
+///
+/// 1. To encourage pure rendering implementations, which makes template rendering more predictable.
+/// 2. To simplify the use-case of rendering from multiple threads simultaneously.
+///
+/// If you must, you can work around this API restriction with [interior
+/// mutability](https://doc.rust-lang.org/reference/interior-mutability.html).
+///
+///
+/// ## Trait naming
+/// The trait name comes from two definitions of 'manifest':
+///
+/// 1. Manifest (*verb*): *display or show (a quality or feeling) by one's acts or appearance*
+/// 2. Manifest (*noun*): *a document giving comprehensive details of a ship and its cargo and
+///    other contents, passengers, and crew*
 pub trait Manifest<A> {
-    /// An error which is produced when rendering.
+    /// An error produced when manifesting.
     type Error;
 
     /// Convert the `Ast` to a type which can be displayed.
     ///
-    /// The rendered format is ephemeral.
+    /// Note that the returned [`Display`](fmt::Display) implementation is ephemeral and can borrow
+    /// from `&self` or the `ast`.
     fn manifest(&self, ast: &A) -> Result<impl fmt::Display, Self::Error>;
+
+    /// Write the `Ast` into a [`fmt::Write`] implementation.
+    fn write_fmt<W: fmt::Write>(
+        &self,
+        ast: &A,
+        mut writer: W,
+    ) -> Result<(), FmtRenderError<Self::Error>> {
+        Ok(write!(
+            writer,
+            "{}",
+            self.manifest(ast).map_err(FmtRenderError::Render)?
+        )?)
+    }
+
+    /// Write the `Ast` into a [`io::Write`] implementation.
+    fn write_io<W: io::Write>(
+        &self,
+        ast: &A,
+        mut writer: W,
+    ) -> Result<(), IORenderError<Self::Error>> {
+        Ok(write!(
+            writer,
+            "{}",
+            self.manifest(ast).map_err(IORenderError::Render)?
+        )?)
+    }
 }
 
-/// A component of a template.
+/// A component of a template, either text or an expression.
 ///
 /// Internally, a [`Template`] is a [`Vec`] of [`Span`]s, which correspond to subsequent
 /// expressions.
-/// The spans can be accessed
+/// The spans can be accessed using the [`Template::spans`] method.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Span<T, A> {
     /// Text, with brackets correctly escaped.
@@ -282,6 +382,8 @@ impl<T, A> Span<T, A> {
     }
 }
 
+/// An intermediate representation consisting of a raw, unparsed span including whitespace,
+/// starting at the provided offset from the source string.
 #[derive(Debug, PartialEq)]
 struct IndexedSpan<'fmt, T> {
     span: Span<T, &'fmt str>,
@@ -302,10 +404,184 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
     }
 }
 
+/// A dynamically parsed iterator of the [spans](Span) of a template string.
+///
+/// The main way to use a [`TemplateSpans`] is as an iterator of `Result<Span, SyntaxError>`. Construct a
+/// [`TemplateSpans`] from a template string using [`TemplateSpans::new`], or from a [`Oneshot`]
+/// using [`Oneshot::spans`].
+///
+/// Span iteration is deterministic and fully defined by the following rules. Go to:
+///
+/// - [Error recovery](#error-recovery)
+/// - [Text span breaking](#text-span-breaking)
+/// - [Fused and bounded length](#fused-and-bounded-length)
+///
+/// ## Error recovery
+/// If the template string contains a syntax error, an `Err(_)` will be returned. Iteration will
+/// continue past the error location if the error type is locally recoverable. This occurs in the
+/// following cases:
+///
+/// 1. In the presence of an extra closing bracket.
+/// 2. If the [`Ast`] implementation fails to parse an expression.
+///
+/// Here is an example illustrating this behaviour.
+/// ```
+/// # use mufmt::{Span, SyntaxError, TemplateSpans};
+/// let mut spans_iter = TemplateSpans::<usize>::new("{12} }and {invalid}");
+///
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Expr(12))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text(" "))));
+/// assert!(matches!(spans_iter.next(), Some(Err(SyntaxError::ExtraBracket(_)))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("and "))));
+/// assert!(matches!(spans_iter.next(), Some(Err(SyntaxError::Ast(_, _)))));
+/// assert!(spans_iter.next().is_none());
+/// ```
+/// Unclosed expressions cannot be recovered.
+/// ```
+/// # use mufmt::{Span, SyntaxError, TemplateSpans};
+/// let mut spans_iter = TemplateSpans::<&str>::new("{unclosed");
+///
+/// assert_eq!(spans_iter.next(), Some(Err(SyntaxError::UnclosedExpr(0))));
+/// // the entire template string was consumed trying to find the closing bracket
+/// assert!(spans_iter.next().is_none());
+/// ```
+///
+/// ## Text span breaking
+/// Approximately speaking, spans are produced to be as large as possible. However, since each span
+/// must refer to a contiguous substring of the original template string (to avoid allocating), a text
+/// span can be broken by an escaped bracket (either `{{` or `}}`).
+///
+/// ### Lazy escape breaking
+/// Spans are broken *lazily*: the second char of an escaped bracket is included in the next
+/// span. In particular, a text span does not contain `{` or `}` except possibly as the first
+/// character of the span.
+///
+/// Here is an example illustrating this behaviour.
+/// ```
+/// # use mufmt::{Span, TemplateSpans};
+/// let mut spans_iter = TemplateSpans::<usize>::new("Escaped {{bracket}}");
+///
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("Escaped "))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("{bracket"))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("}"))));
+/// assert_eq!(spans_iter.next(), None);
+/// ```
+/// In particular, lazy span production rules mean that the representation may not be
+/// absolutely minimal: the above example has an equivalent representation in which the second span
+/// is `Span::Text("{bracket}")`. This representation will never be produced.
+///
+/// ### No spurious text spans
+/// Text spans are guaranteed to be non-empty.
+///
+/// Here is an example illustrating this behaviour.
+/// ```
+/// # use mufmt::{Span, TemplateSpans};
+/// let mut spans_iter = TemplateSpans::<usize>::new("{0}{1} {2}");
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Expr(0))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Expr(1))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text(" "))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Expr(2))));
+/// ```
+///
+/// ## Fused and bounded length
+/// Each call to `.next()` is guaranteed to increment the parser position within the template
+/// string, unless there are no characters remaining. In particular, [`TemplateSpans`] implements [`FusedIterator`](std::iter::FusedIterator).
+///
+/// Since the parser position increments, the number of steps in the iteration is at most
+/// `self.remainder().len()`. This is reported by the `size_hint` implementation.
+/// ```
+/// # use mufmt::TemplateSpans;
+/// let mut spans_iter = TemplateSpans::<&str>::new("Hello {name}!");
+///
+/// assert_eq!(spans_iter.remainder(), "Hello {name}!");
+/// assert_eq!(spans_iter.size_hint(), (1, Some(spans_iter.remainder().len())));
+///
+/// let _ = spans_iter.next();
+/// assert_eq!(spans_iter.remainder(), "{name}!");
+/// assert_eq!(spans_iter.size_hint(), (1, Some(spans_iter.remainder().len())));
+///
+/// let _ = spans_iter.next();
+/// assert_eq!(spans_iter.remainder(), "!");
+/// assert_eq!(spans_iter.size_hint(), (1, Some(spans_iter.remainder().len())));
+///
+/// let _ = spans_iter.next();
+/// assert_eq!(spans_iter.size_hint(), (0, Some(0)));
+/// assert_eq!(spans_iter.remainder(), "");
+/// assert!(spans_iter.next().is_none());
+/// ```
+/// The extremal conditions for `size_hint` are realized in the following cases.
+/// ```
+/// # use mufmt::TemplateSpans;
+/// // A single text block
+/// let mut spans_iter = TemplateSpans::<&str>::new("Only text");
+/// assert_eq!(spans_iter.size_hint().0, spans_iter.count());
+///
+/// // An alternating sequence of text blocks and extra closing brackets (resulting in errors)
+/// // attains the size hint limit
+/// let mut spans_iter = TemplateSpans::<&str>::new("0}0}");
+/// assert_eq!(spans_iter.size_hint().1, Some(spans_iter.count()));
+/// ```
+pub struct TemplateSpans<'fmt, A> {
+    inner: Oneshot<'fmt>,
+    _marker: PhantomData<A>,
+}
+
+impl<'fmt, A> TemplateSpans<'fmt, A>
+where
+    A: Ast<'fmt>,
+{
+    /// Initialize from a template string.
+    pub fn new(s: &'fmt str) -> Self {
+        Self {
+            inner: Oneshot::new(s),
+            _marker: PhantomData,
+        }
+    }
+
+    /// Returns the part of the template string which has not yet been parsed.
+    ///
+    /// ## Example
+    /// ```
+    /// use mufmt::TemplateSpans;
+    ///
+    /// let spans_iter = TemplateSpans::<&str>::new("A template {expr}");
+    /// ```
+    pub fn remainder(&self) -> &'fmt str {
+        self.inner.remainder()
+    }
+}
+
+impl<'fmt, A> Iterator for TemplateSpans<'fmt, A>
+where
+    A: Ast<'fmt>,
+{
+    type Item = Result<Span<&'fmt str, A>, SyntaxError<A::Error>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(
+            self.inner
+                .next_span::<&str, A::Error>()
+                .transpose()?
+                .and_then(TryInto::try_into),
+        )
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.remaining_parts_count()
+    }
+}
+
+impl<'fmt, A: Ast<'fmt>> std::iter::FusedIterator for TemplateSpans<'fmt, A> {}
+
 /// A template which can be rendered at most once.
 ///
-/// In most cases, you want to use [`Template`] since the additional cost of preparing a
+/// In many cases, you want to use [`Template`] since the additional cost of preparing a
 /// `Template` is relatively minimal (a single [`Vec`] allocation).
+///
+/// A [`Oneshot`] template provides the same render methods as a [`Template`]: [`Oneshot::render`],
+/// [`Oneshot::render_io`], and [`Oneshot::render_fmt`]. The main difference is that these methods
+/// accept `self` and return a more general [`Error`] type since parsing and rendering occur at the
+/// same time.
 ///
 /// ## Examples
 /// Check syntax using [`Oneshot::validate`]:
@@ -341,36 +617,81 @@ impl<'fmt> Oneshot<'fmt> {
     }
 
     /// Consume this template, checking if the syntax is valid for the provided [`Ast`].
-    pub fn validate<A>(mut self) -> Result<(), SyntaxError<A::Error>>
+    ///
+    /// This method reports the first error encountered. If you want to report as many errors as
+    /// possible, use a [`TemplateSpans`] iterator instead which supports [error
+    /// recovery](TemplateSpans#error-recovery).
+    ///
+    /// ## Examples
+    /// Validate template syntax.
+    /// ```
+    /// use mufmt::Oneshot;
+    ///
+    /// let oneshot = Oneshot::new("Valid {template}");
+    /// assert!(oneshot.validate::<&str>().is_ok());
+    ///
+    /// let oneshot = Oneshot::new("{unclosed");
+    /// assert!(oneshot.validate::<&str>().is_err());
+    /// ```
+    /// The provided `Ast` determines the expression validation rules.
+    /// ```
+    /// # use mufmt::Oneshot;
+    /// let s = "Not a number: {template}";
+    /// assert!(Oneshot::new(s).validate::<usize>().is_err());
+    /// assert!(Oneshot::new(s).validate::<&str>().is_ok());
+    /// ```
+    /// Check that a template contains no expression blocks using [`Infallible`]:
+    /// ```
+    /// # use mufmt::Oneshot;
+    /// use std::convert::Infallible;
+    /// assert!(Oneshot::new("Contains an expr: {}").validate::<Infallible>().is_err());
+    /// assert!(Oneshot::new("Only text!").validate::<Infallible>().is_ok());
+    /// ```
+    pub fn validate<A>(self) -> Result<(), SyntaxError<A::Error>>
     where
         A: Ast<'fmt>,
     {
-        while let Some(spanned) = self.next_span()? {
-            let _ = TryInto::<Span<&'fmt str, A>>::try_into(spanned)?;
+        self.spans::<A>().try_for_each(|r| r.map(|_| ()))
+    }
+
+    /// Consumes this template, checking if the syntax is valid according to the global syntax
+    /// rules (i.e., without checking the expressions).
+    ///
+    /// This is a shorthand for calling [`Oneshot::validate`] with `Ast` type
+    /// [`IgnoredAny`](types::IgnoredAny).
+    pub fn validate_any(self) -> Result<(), SyntaxError<Infallible>> {
+        self.validate::<types::IgnoredAny>()
+    }
+
+    /// Returns an iterator over the spans corresponding to the underlying template string.
+    ///
+    /// See the [`TemplateSpans`] docs for more detail.
+    pub fn spans<A>(self) -> TemplateSpans<'fmt, A>
+    where
+        A: Ast<'fmt>,
+    {
+        TemplateSpans {
+            inner: self,
+            _marker: PhantomData,
         }
-        Ok(())
     }
 
     /// A convenience function to render directly into a newly allocated `String`.
     ///
     /// This is equivalent to allocating a new `String` yourself and writing into it with
     /// [`render_fmt`](Self::render_fmt).
-    pub fn render<A, C>(mut self, ctx: &C) -> Result<String, Error<A::Error, C::Error>>
+    pub fn render<A, M>(mut self, mfst: &M) -> Result<String, Error<A::Error, M::Error>>
     where
         A: Ast<'fmt>,
-        C: Manifest<A>,
+        M: Manifest<A>,
     {
-        use std::fmt::Write;
+        use std::fmt::Write as _;
         let mut buf = String::new();
         while let Some(spanned) = self.next_span()? {
             match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
                 Span::Text(s) => buf.push_str(s),
                 Span::Expr(ast) => {
-                    let _ = write!(
-                        &mut buf,
-                        "{}",
-                        ctx.manifest(&ast).map_err(RenderError::Render)?
-                    );
+                    let _ = write!(&mut buf, "{}", mfst.manifest(&ast).map_err(Error::Render)?);
                 }
             }
         }
@@ -379,25 +700,24 @@ impl<'fmt> Oneshot<'fmt> {
     }
 
     /// Write the template into the provided [`io::Write`] implementation.
-    pub fn render_io<A, C, W>(
+    ///
+    /// The writer is not flushed unless the [`Manifest`] implementation overrides the default
+    /// [`Manifest::write_io`] implementation to manually flush the writer.
+    pub fn render_io<A, M, W>(
         mut self,
-        ctx: &C,
+        mfst: &M,
         mut writer: W,
-    ) -> Result<(), Error<A::Error, C::Error>>
+    ) -> Result<(), Error<A::Error, M::Error>>
     where
         A: Ast<'fmt>,
-        C: Manifest<A>,
+        M: Manifest<A>,
         W: io::Write,
     {
         while let Some(spanned) = self.next_span()? {
             match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
                 Span::Text(s) => writer.write_all(s.as_bytes())?,
                 Span::Expr(ast) => {
-                    let _ = write!(
-                        writer,
-                        "{}",
-                        ctx.manifest(&ast).map_err(RenderError::Render)?
-                    );
+                    mfst.write_io(&ast, &mut writer)?;
                 }
             }
         }
@@ -406,30 +726,43 @@ impl<'fmt> Oneshot<'fmt> {
     }
 
     /// Write the template into the provided [`fmt::Write`] implementation.
-    pub fn render_fmt<A, C, W>(
+    pub fn render_fmt<A, M, W>(
         mut self,
-        ctx: &C,
+        mfst: &M,
         mut writer: W,
-    ) -> Result<(), Error<A::Error, C::Error>>
+    ) -> Result<(), Error<A::Error, M::Error>>
     where
         A: Ast<'fmt>,
-        C: Manifest<A>,
+        M: Manifest<A>,
         W: fmt::Write,
     {
         while let Some(spanned) = self.next_span()? {
             match TryInto::<Span<&'fmt str, A>>::try_into(spanned)? {
                 Span::Text(s) => writer.write_str(s)?,
                 Span::Expr(ast) => {
-                    let _ = write!(
-                        writer,
-                        "{}",
-                        ctx.manifest(&ast).map_err(RenderError::Render)?
-                    );
+                    mfst.write_fmt(&ast, &mut writer)?;
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// The trailing characters which have not yet been parsed.
+    fn remainder(&self) -> &'fmt str {
+        unsafe { from_utf8_unchecked(self.template.get_unchecked(self.cursor..)) }
+    }
+
+    /// The size hint implementation.
+    fn remaining_parts_count(&self) -> (usize, Option<usize>) {
+        if self.cursor == self.template.len() {
+            (0, Some(0))
+        } else {
+            (
+                1,
+                Some(unsafe { self.template.len().unchecked_sub(self.cursor) }),
+            )
+        }
     }
 
     /// Extract the text corresponding to the provided range, along with the index at which the
@@ -443,107 +776,119 @@ impl<'fmt> Oneshot<'fmt> {
     where
         T: From<&'fmt str>,
     {
-        // check what we are parsing
-        let tail = unsafe { self.template.get_unchecked(self.cursor..) };
-        match tail {
-            [] => Ok(None),
-            [b'{', b'{', ..] | [b'}', b'}', ..] => {
-                // single escaped bracket
+        unsafe {
+            // check what we are parsing
+            let tail = self.template.get_unchecked(self.cursor..);
+            match tail {
+                [] => Ok(None),
+                [b'{', b'{', ..] | [b'}', b'}', ..] => {
+                    // single escaped bracket
 
-                // we opportunistically try to read as many characters as possible,
-                // as long as they are not more brackets
-                let text_start = self.cursor + 1;
+                    // we opportunistically try to read as many characters as possible,
+                    // as long as they are not more brackets
+                    let text_start = self.cursor.unchecked_add(1);
 
-                if let Some(offset) = memchr2(b'{', b'}', unsafe {
-                    self.template.get_unchecked(self.cursor + 2..)
-                }) {
-                    let text_end = self.cursor + 2 + offset;
-                    let s = unsafe { self.get_unchecked(text_start..text_end) };
-                    self.cursor = text_end;
-                    Ok(Some(IndexedSpan {
-                        span: Span::Text(s.into()),
-                        offset: text_start,
-                    }))
-                } else {
-                    let res = Ok(Some(IndexedSpan {
-                        span: Span::Text(unsafe {
-                            from_utf8_unchecked(&self.template[text_start..]).into()
-                        }),
-                        offset: text_start,
-                    }));
-                    self.cursor = self.template.len();
-                    res
-                }
-            }
-            [b'}', ..] => {
-                // unexpected closing bracket which is not escaped
-
-                Err(SyntaxError::ExtraBracket(self.cursor))
-            }
-            [b'{', b'#', ..] => {
-                // extended expression
-
-                // we first count how many leading `#` characters there are
-                let hash_count = self.template[self.cursor + 2..]
-                    .iter()
-                    .take_while(|b| **b == b'#')
-                    .count()
-                    + 1;
-                let expr_start = self.cursor + 1 + hash_count;
-                let hash_patt = &self.template[self.cursor + 1..expr_start];
-
-                let tail = &self.template[expr_start..];
-                for idx in memmem::find_iter(tail, hash_patt) {
-                    // candidate end: check if the next byte is a closing bracket
-                    let expr_end = expr_start + idx;
-                    if let Some(b'}') = self.template.get(expr_end + hash_count) {
-                        let s = unsafe { self.get_unchecked(expr_start..expr_end) };
-                        self.cursor = expr_end + hash_count + 1;
-                        return Ok(Some(IndexedSpan {
-                            span: Span::Expr(s),
-                            offset: expr_start,
-                        }));
-                    }
-                }
-                Err(SyntaxError::UnclosedExpr(self.cursor))
-            }
-            [b'{', ..] => {
-                // normal expression
-
-                let expr_start = self.cursor + 1;
-                let tail = &self.template[expr_start..];
-                match memchr(b'}', tail) {
-                    Some(idx) => {
-                        let expr_end = expr_start + idx;
-                        let s = unsafe { self.get_unchecked(expr_start..expr_end) };
-                        self.cursor = expr_end + 1;
+                    if let Some(offset) = memchr2(
+                        b'{',
+                        b'}',
+                        self.template.get_unchecked(self.cursor.unchecked_add(2)..),
+                    ) {
+                        let text_end = self.cursor + 2 + offset;
+                        let s = self.get_unchecked(text_start..text_end);
+                        self.cursor = text_end;
                         Ok(Some(IndexedSpan {
-                            span: Span::Expr(s),
-                            offset: expr_start,
+                            span: Span::Text(s.into()),
+                            offset: text_start,
                         }))
+                    } else {
+                        let res = Ok(Some(IndexedSpan {
+                            span: Span::Text(
+                                from_utf8_unchecked(&self.template[text_start..]).into(),
+                            ),
+                            offset: text_start,
+                        }));
+                        self.cursor = self.template.len();
+                        res
                     }
-                    None => Err(SyntaxError::UnclosedExpr(self.cursor)),
                 }
-            }
-            _ => {
-                // text
-                let tail = unsafe { self.template.get_unchecked(self.cursor..) };
-                if let Some(offset) = memchr2(b'{', b'}', tail) {
-                    let text_start = self.cursor;
-                    let text_end = self.cursor + offset;
-                    self.cursor += offset;
-                    let s = unsafe { self.get_unchecked(text_start..text_end) };
-                    Ok(Some(IndexedSpan {
-                        span: Span::Text(s.into()),
-                        offset: text_start,
-                    }))
-                } else {
-                    let res = Ok(Some(IndexedSpan {
-                        span: Span::Text(unsafe { from_utf8_unchecked(tail).into() }),
-                        offset: self.cursor,
-                    }));
+                [b'}', ..] => {
+                    // unexpected closing bracket which is not escaped
+                    let err_loc = self.cursor;
+                    self.cursor += 1;
+                    Err(SyntaxError::ExtraBracket(err_loc))
+                }
+                [b'{', b'#', ..] => {
+                    // extended expression
+
+                    // we first count how many leading `#` characters there are
+                    let hash_count = self.template[self.cursor + 2..]
+                        .iter()
+                        .take_while(|b| **b == b'#')
+                        .count()
+                        + 1;
+                    let expr_start = self.cursor + 1 + hash_count;
+                    let hash_patt = &self.template[self.cursor + 1..expr_start];
+
+                    let tail = &self.template[expr_start..];
+                    for idx in memmem::find_iter(tail, hash_patt) {
+                        // candidate end: check if the next byte is a closing bracket
+                        let expr_end = expr_start + idx;
+                        if let Some(b'}') = self.template.get(expr_end + hash_count) {
+                            let s = self.get_unchecked(expr_start..expr_end);
+                            self.cursor = expr_end + hash_count + 1;
+                            return Ok(Some(IndexedSpan {
+                                span: Span::Expr(s),
+                                offset: expr_start,
+                            }));
+                        }
+                    }
+                    let err_loc = self.cursor;
                     self.cursor = self.template.len();
-                    res
+                    Err(SyntaxError::UnclosedExpr(err_loc))
+                }
+                [b'{', ..] => {
+                    // normal expression
+
+                    let expr_start = self.cursor + 1;
+                    let tail = &self.template[expr_start..];
+                    match memchr(b'}', tail) {
+                        Some(idx) => {
+                            let expr_end = expr_start + idx;
+                            let s = self.get_unchecked(expr_start..expr_end);
+                            self.cursor = expr_end + 1;
+                            Ok(Some(IndexedSpan {
+                                span: Span::Expr(s),
+                                offset: expr_start,
+                            }))
+                        }
+                        None => {
+                            // the expression is unclosed, so there is nothing else we can do
+                            let err_loc = self.cursor;
+                            self.cursor = self.template.len();
+                            Err(SyntaxError::UnclosedExpr(err_loc))
+                        }
+                    }
+                }
+                _ => {
+                    // text
+                    let tail = self.template.get_unchecked(self.cursor..);
+                    if let Some(offset) = memchr2(b'{', b'}', tail) {
+                        let text_start = self.cursor;
+                        let text_end = self.cursor + offset;
+                        self.cursor += offset;
+                        let s = self.get_unchecked(text_start..text_end);
+                        Ok(Some(IndexedSpan {
+                            span: Span::Text(s.into()),
+                            offset: text_start,
+                        }))
+                    } else {
+                        let res = Ok(Some(IndexedSpan {
+                            span: Span::Text(from_utf8_unchecked(tail).into()),
+                            offset: self.cursor,
+                        }));
+                        self.cursor = self.template.len();
+                        res
+                    }
                 }
             }
         }
@@ -559,6 +904,9 @@ impl<'fmt> Oneshot<'fmt> {
 /// - [`Template::render_io`] writes to an [`io::Write`] implementation, such as a
 ///   [`File`](std::fs::File) or [`stdout`](std::io::stdout)).
 /// - [`Template::render_fmt`] writes to a [`fmt::Write`] implementation, such as a [`&mut String`](String) buffer.
+///
+/// Templates are immutable, but you can deconstruct and reconstruct a template using its
+/// [`IntoIterator`] and [`FromIterator`] implementations.
 ///
 /// ## Type parameters
 /// A `Template` is generic over two type parameters:
@@ -604,9 +952,9 @@ impl<'fmt> Oneshot<'fmt> {
 ///         .into_iter()
 ///         .collect();
 ///
-/// let ctx = ["Eero", "Aino", "Maija"];
+/// let mfst = ["Eero", "Aino", "Maija"];
 ///
-/// assert_eq!(template.render(&ctx).unwrap(), "Hello Maija!");
+/// assert_eq!(template.render(&mfst).unwrap(), "Hello Maija!");
 /// ```
 ///
 #[derive(Debug, Clone)]
@@ -620,7 +968,7 @@ pub struct Template<T, A> {
 pub type BorrowedTemplate<'fmt, A> = Template<&'fmt str, A>;
 
 /// A type alias for a template which owns its own data.
-pub type OwnedTemplate<A> = Template<String, A>;
+pub type OwnedTemplate<A> = Template<Box<str>, A>;
 
 impl<'fmt, T, A> TryFrom<Oneshot<'fmt>> for Template<T, A>
 where
@@ -672,10 +1020,10 @@ impl<T, A> Template<T, A> {
     ///
     /// This is equivalent to allocating a new `String` yourself and writing into it with
     /// [`render_fmt`](Self::render_fmt).
-    pub fn render<C>(&self, ctx: &C) -> Result<String, C::Error>
+    pub fn render<M>(&self, mfst: &M) -> Result<String, M::Error>
     where
         T: AsRef<str>,
-        C: Manifest<A>,
+        M: Manifest<A>,
     {
         use std::fmt::Write;
         let mut buf = String::new();
@@ -685,7 +1033,7 @@ impl<T, A> Template<T, A> {
                     buf.push_str(s.as_ref());
                 }
                 Span::Expr(ast) => {
-                    let _ = write!(&mut buf, "{}", ctx.manifest(ast)?);
+                    let _ = write!(&mut buf, "{}", mfst.manifest(ast)?);
                 }
             }
         }
@@ -694,10 +1042,13 @@ impl<T, A> Template<T, A> {
     }
 
     /// Write the compiled template into the provided [`io::Write`] implementation.
-    pub fn render_io<C, W>(&self, ctx: &C, mut writer: W) -> Result<(), RenderError<C::Error>>
+    ///
+    /// The writer is not flushed unless the [`Manifest`] implementation overrides the default
+    /// [`Manifest::write_io`] implementation to manually flush the writer.
+    pub fn render_io<M, W>(&self, mfst: &M, mut writer: W) -> Result<(), IORenderError<M::Error>>
     where
         T: AsRef<[u8]>,
-        C: Manifest<A>,
+        M: Manifest<A>,
         W: io::Write,
     {
         for span in self.spans() {
@@ -706,11 +1057,7 @@ impl<T, A> Template<T, A> {
                     writer.write_all(s.as_ref())?;
                 }
                 Span::Expr(ast) => {
-                    write!(
-                        writer,
-                        "{}",
-                        ctx.manifest(ast).map_err(RenderError::Render)?
-                    )?;
+                    mfst.write_io(ast, &mut writer)?;
                 }
             }
         }
@@ -719,10 +1066,10 @@ impl<T, A> Template<T, A> {
     }
 
     /// Write the compiled template into the provided [`fmt::Write`] implementation.
-    pub fn render_fmt<C, W>(&self, ctx: &C, mut writer: W) -> Result<(), RenderError<C::Error>>
+    pub fn render_fmt<M, W>(&self, mfst: &M, mut writer: W) -> Result<(), FmtRenderError<M::Error>>
     where
         T: AsRef<str>,
-        C: Manifest<A>,
+        M: Manifest<A>,
         W: fmt::Write,
     {
         for span in self.spans() {
@@ -731,11 +1078,7 @@ impl<T, A> Template<T, A> {
                     writer.write_str(s.as_ref())?;
                 }
                 Span::Expr(ast) => {
-                    write!(
-                        writer,
-                        "{}",
-                        ctx.manifest(ast).map_err(RenderError::Render)?
-                    )?;
+                    mfst.write_fmt(ast, &mut writer)?;
                 }
             }
         }
@@ -744,6 +1087,9 @@ impl<T, A> Template<T, A> {
     }
 
     /// Returns a slice of the template spans.
+    ///
+    /// If this template was compiled using [`Template::compile`], the spans will satisfy
+    /// [precise text breaking rules](TemplateSpans#text-span-breaking).
     #[inline]
     pub fn spans(&self) -> &[Span<T, A>] {
         &self.inner

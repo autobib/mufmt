@@ -98,16 +98,16 @@ fn render() {
 
     let template = BorrowedTemplate::<&str>::compile("Hello {name}!").unwrap();
 
-    let mut ctx: HashMap<&'static str, &'static str> = HashMap::new();
-    ctx.insert("name", "Alex");
-    assert_eq!(template.render(&ctx).unwrap(), "Hello Alex!");
+    let mut mfst: HashMap<&'static str, &'static str> = HashMap::new();
+    mfst.insert("name", "Alex");
+    assert_eq!(template.render(&mfst).unwrap(), "Hello Alex!");
 
-    let mut ctx: HashMap<&'static str, String> = HashMap::new();
-    ctx.insert("name", "Bob".to_owned());
-    assert_eq!(template.render(&ctx).unwrap(), "Hello Bob!");
+    let mut mfst: HashMap<&'static str, String> = HashMap::new();
+    mfst.insert("name", "Bob".to_owned());
+    assert_eq!(template.render(&mfst).unwrap(), "Hello Bob!");
 
-    let ctx: HashMap<&'static str, &'static str> = HashMap::new();
-    assert!(template.render(&ctx).is_err());
+    let mfst: HashMap<&'static str, &'static str> = HashMap::new();
+    assert!(template.render(&mfst).is_err());
 
     let template = BorrowedTemplate::<usize>::compile("{1}, {3}").unwrap();
     assert_eq!(
