@@ -325,19 +325,12 @@ pub trait Ast<'fmt>: Sized {
 /// Manifest implementations typically contain state which determine how the string is
 /// displayed.
 ///
-/// ## No mutable self reference
-/// A `Manifest` implementation is not provided a mutable self-reference. There are two reasons
-/// for this:
-///
-/// 1. To encourage predictable template rendering.
-/// 2. To simplify the use-case of rendering from multiple threads simultaneously.
-///
-/// If you must, you can work around this API restriction with [interior
-/// mutability](https://doc.rust-lang.org/reference/interior-mutability.html).
-///
-/// In order to maintain state which lasts for the duration of a single template, see [`ManifestMut`].
+/// ## Mutable state
+/// A `Manifest` implementation is not provided a mutable self-reference. In order to maintain
+/// mutable state which lasts for a single render of a template, implement [`ManifestMut`]
+/// instead.
 pub trait Manifest<A> {
-    /// An error produced when manifesting.
+    /// An error produced while manifesting.
     type Error;
 
     /// Convert the `Ast` to a type which can be displayed.
@@ -347,6 +340,8 @@ pub trait Manifest<A> {
     fn manifest(&self, ast: &A) -> Result<impl fmt::Display, Self::Error>;
 
     /// Write the `Ast` into a [`fmt::Write`] implementation.
+    ///
+    /// The default implementation calls `write!(writer, "{}", self.manifest(ast))`.
     fn write_fmt<W: fmt::Write>(
         &self,
         ast: &A,
@@ -360,6 +355,8 @@ pub trait Manifest<A> {
     }
 
     /// Write the `Ast` into a [`io::Write`] implementation.
+    ///
+    /// The default implementation calls `write!(writer, "{}", self.manifest(ast))`.
     fn write_io<W: io::Write>(
         &self,
         ast: &A,
@@ -373,61 +370,53 @@ pub trait Manifest<A> {
     }
 }
 
-impl<A, M: Manifest<A>> ManifestMut<A> for M {
-    type Error = M::Error;
-
-    type State = ();
-
-    #[inline]
-    fn init_state(&self) -> Self::State {}
-
-    #[inline]
-    fn manifest_mut(
-        &self,
-        ast: &A,
-        (): &mut Self::State,
-    ) -> Result<impl fmt::Display, Self::Error> {
-        self.manifest(ast)
-    }
-
-    #[inline]
-    fn write_fmt_mut<W: fmt::Write>(
-        &self,
-        ast: &A,
-        (): &mut Self::State,
-        writer: W,
-    ) -> Result<(), FmtRenderError<Self::Error>> {
-        self.write_fmt(ast, writer)
-    }
-
-    #[inline]
-    fn write_io_mut<W: io::Write>(
-        &self,
-        ast: &A,
-        (): &mut Self::State,
-        writer: W,
-    ) -> Result<(), IORenderError<Self::Error>> {
-        self.write_io(ast, writer)
-    }
-}
-
-/// A [`Manifest`] implementation which can maintain mutable state.
+/// A manifest which can display an [`Ast`] using mutable state.
 ///
-/// The mutable state is the associated [`ManifestMut::State`] type.
-/// The state is initialized before the template is rendered, using [`ManifestMut::init_state`],
-/// and is subsequently passed to each invocation of [`ManifestMut::manifest_mut`].
+/// If you do not need mutable state, implement [`Manifest`] instead. Every implementation of
+/// [`Manifest<A>`] automatically provides an implementation of [`ManifestMut<A>`], which means the
+/// template rendering methods (which accept [`ManifestMut<A>`]) automatically accept
+/// [`Manifest<A>`] as well.
 ///
-/// ## Render order
+/// ## Render rules
+/// The mutable state is initialized with [`ManifestMut::init_state`] before the template is
+/// rendered. This state is subsequently passed to each invocation of
+/// [`ManifestMut::manifest_mut`], and then dropped after the final invocation.
+///
 /// The calls to `manifest_mut` are in the order in which expressions appear in the template.
-/// ```
-/// ```
 ///
-/// ## Blanket implementation
-/// Every implementation of [`Manifest<A>`] automatically provides an implementation of [`ManifestMut<A>`].
-/// This prevents types from having conflicting implementations. The blanket implementation uses
-/// the unit type `()` for the state
+/// ## Example
+/// Here is an example which replaces each (empty) expression with the index at which it occurred
+/// in the template.
+/// ```
+/// use mufmt::{ManifestMut, Template};
+///
+/// struct ExprCounter;
+///
+/// impl ManifestMut<()> for ExprCounter {
+///     type Error = std::convert::Infallible;
+///
+///     type State = usize;
+///
+///     fn init_state(&self) -> Self::State {
+///         0
+///     }
+///
+///     fn manifest_mut(
+///         &self,
+///         _: &(),
+///         state: &mut Self::State,
+///     ) -> Result<impl std::fmt::Display, Self::Error> {
+///         let res = *state;
+///         *state += 1;
+///         Ok(res)
+///     }
+/// }
+///
+/// let template = Template::<&str, ()>::compile("{}, then {} and {}").unwrap();
+/// assert_eq!(template.render(&ExprCounter).unwrap(), "0, then 1 and 2");
+/// ```
 pub trait ManifestMut<A> {
-    /// An error produced when manifesting.
+    /// An error produced while manifesting.
     type Error;
 
     /// Associated mutable state, which lasts for the duration of a single template.
@@ -471,6 +460,44 @@ pub trait ManifestMut<A> {
             self.manifest_mut(ast, state)
                 .map_err(IORenderError::Render)?
         )?)
+    }
+}
+
+impl<A, M: Manifest<A>> ManifestMut<A> for M {
+    type Error = M::Error;
+
+    type State = ();
+
+    #[inline]
+    fn init_state(&self) -> Self::State {}
+
+    #[inline]
+    fn manifest_mut(
+        &self,
+        ast: &A,
+        (): &mut Self::State,
+    ) -> Result<impl fmt::Display, Self::Error> {
+        self.manifest(ast)
+    }
+
+    #[inline]
+    fn write_fmt_mut<W: fmt::Write>(
+        &self,
+        ast: &A,
+        (): &mut Self::State,
+        writer: W,
+    ) -> Result<(), FmtRenderError<Self::Error>> {
+        self.write_fmt(ast, writer)
+    }
+
+    #[inline]
+    fn write_io_mut<W: io::Write>(
+        &self,
+        ast: &A,
+        (): &mut Self::State,
+        writer: W,
+    ) -> Result<(), IORenderError<Self::Error>> {
+        self.write_io(ast, writer)
     }
 }
 
