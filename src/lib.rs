@@ -49,7 +49,7 @@
 //! defined by the [`Manifest`] implementation of the `HashMap`, which expects raw strings which
 //! correspond to map keys. In general, the type is the associated [`Ast`] implementation.
 //!
-//! Suppose we instead provide a [`Vec`] as the context. Then the keys are instead parsed as `usize`.
+//! Suppose we instead provide a [`Vec`] as the context. Then the keys are parsed as `usize`.
 //! In this example, we also see that same template can be re-used with a new context without
 //! requiring recompilation of the template.
 //! ```
@@ -78,20 +78,29 @@
 //! Passing a template with the incorrect expression type will result in a compilation error.
 //! ```compile_fail
 //! # use mufmt::BorrowedTemplate;
+//! # use std::collections::HashMap;
 //! let mfst = HashMap::from([("123", "456")]);
-//! // a `HashMap` expects an `&str`, not a `usize`
+//! // this `HashMap` has `&str` keys, which cannot be retrieved with a `usize`
+//! let template = BorrowedTemplate::<usize>::compile("Number: {123}").unwrap();
+//! template.render(&mfst);
+//! ```
+//! Modifying the key type fixes this error.
+//! ```
+//! # use mufmt::BorrowedTemplate;
+//! # use std::collections::HashMap;
+//! let mfst = HashMap::from([(123, "456")]); // usize keys are compatible
 //! let template = BorrowedTemplate::<usize>::compile("Number: {123}").unwrap();
 //! template.render(&mfst);
 //! ```
 //!
 //! ## Syntax
-//! A μfmt template is just a rust `str` where bracket-delimited expressions `{...}` are replaced with values
+//! A μfmt template is a UTF-8 string where bracket-delimited expressions `{...}` are replaced with values
 //! when the string is rendered.
 //!
 //! 1. The template not inside an expression are referred to as *text*,  and the parts inside an expression are
 //!    referred to as *expressions*.
 //! 2. Expressions are whitespace trimmed according to the rules of [`trim`](str::trim).
-//! 3. To include brackets inside *text*, doubled brackets (like `{{` and `}}`) results in text
+//! 3. To include brackets inside *text*, doubled brackets (like `{{` and `}}`) result in text
 //!    consisting of a single bracket.
 //! 4. To include brackets inside *expressions*, you can use *extended expression delimiters*: the initial
 //!    `{` of an expression may be followed by any number of `#` characters. Then, the expression can only be
@@ -236,8 +245,10 @@
 //! recovery](TemplateSpans#error-recovery): this iterator can recover from non-fatal parsing
 //! errors, such as expressions which are invalid for the provided `Ast`.
 //!
-//! If you already have a [`Template`], the spans can be obtained using [`Template::spans`]
-//! (without any syntax errors). The spans can also be obtained with [`Oneshot::spans`].
+//! A [`TemplateSpans`] struct can also be obtained with [`Oneshot::spans`].
+//!
+//! If you already have a [`Template`], you might be interested [`Template::spans`], which just
+//! contains the [`Span`]s without the possible syntax errors.
 
 #![deny(missing_docs)]
 
@@ -385,6 +396,28 @@ impl<T, A> Span<T, A> {
     /// Returns if this is a [`Expr`](Span::Expr).
     pub fn is_expr(&self) -> bool {
         matches!(self, Self::Expr(_))
+    }
+
+    /// Apply a closure to the text, converting it to a new type.
+    pub fn map_text<F, U>(self, f: F) -> Span<U, A>
+    where
+        F: FnOnce(T) -> U,
+    {
+        match self {
+            Self::Text(t) => Span::Text(f(t)),
+            Self::Expr(e) => Span::Expr(e),
+        }
+    }
+
+    /// Apply a closure to the expression, converting it to a new type.
+    pub fn map_expr<F, B>(self, f: F) -> Span<T, B>
+    where
+        F: FnOnce(A) -> B,
+    {
+        match self {
+            Self::Text(t) => Span::Text(t),
+            Self::Expr(e) => Span::Expr(f(e)),
+        }
     }
 }
 
@@ -570,6 +603,7 @@ where
 {
     type Item = Result<Span<&'fmt str, A>, SyntaxError<A::Error>>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         Some(
             self.inner
@@ -615,8 +649,8 @@ impl<'fmt, A: Ast<'fmt>> std::iter::FusedIterator for TemplateSpans<'fmt, A> {}
 pub struct Oneshot<'fmt> {
     // SAFETY: Must be bytes from valid str
     template: &'fmt [u8],
-    // SAFETY: Must correspond to a valid str index in the string from which `template` was
-    // produced.
+    // SAFETY: Must be <= template.len(), and correspond to a valid char offset (i.e.
+    // self.template[self.cursor..] must return a valid string
     cursor: usize,
 }
 
@@ -763,6 +797,8 @@ impl<'fmt> Oneshot<'fmt> {
 
     /// The trailing characters which have not yet been parsed.
     fn remainder(&self) -> &'fmt str {
+        // SAFETY: self.cursor is guaranteed to be a valid char index for the original string which
+        // produced self.template
         unsafe { from_utf8_unchecked(self.template.get_unchecked(self.cursor..)) }
     }
 
@@ -773,6 +809,7 @@ impl<'fmt> Oneshot<'fmt> {
         } else {
             (
                 1,
+                // SAFETY: self.cursor <= self.template.len() is the invariant
                 Some(unsafe { self.template.len().unchecked_sub(self.cursor) }),
             )
         }
@@ -780,17 +817,24 @@ impl<'fmt> Oneshot<'fmt> {
 
     /// Extract the text corresponding to the provided range, along with the index at which the
     /// text starts.
+    ///
+    /// # Safety
+    /// The provided range must be a valid start and end index for the original string from which
+    /// self.template was constructed.
     unsafe fn get_unchecked(&self, range: std::ops::Range<usize>) -> &'fmt str {
         unsafe { from_utf8_unchecked(self.template.get_unchecked(range)) }
     }
 
     /// The core parsing logic.
+    ///
+    /// This method behaves like a fallible iterator of [`IndexedSpan`], each corresponding to a
+    /// [`Span`], with some extra information about the offset within the input string.
     fn next_span<T, E>(&mut self) -> Result<Option<IndexedSpan<'fmt, T>>, SyntaxError<E>>
     where
         T: From<&'fmt str>,
     {
         unsafe {
-            // check what we are parsing
+            // SAFETY: self.cursor is guaranteed to be a valid index for the provided bytes
             let tail = self.template.get_unchecked(self.cursor..);
             match tail {
                 [] => Ok(None),
@@ -799,15 +843,30 @@ impl<'fmt> Oneshot<'fmt> {
 
                     // we opportunistically try to read as many characters as possible,
                     // as long as they are not more brackets
+
+                    // SAFETY: we just checked that there is another byte which is an ASCII char
                     let text_start = self.cursor.unchecked_add(1);
+
+                    // SAFETY: we just checked that there are two initial bytes which are ASCII
+                    // char
+                    let after_bracket_start = self.cursor.unchecked_add(2);
 
                     if let Some(offset) = memchr2(
                         b'{',
                         b'}',
-                        self.template.get_unchecked(self.cursor.unchecked_add(2)..),
+                        // SAFETY: the two bytes we just read are ASCII char
+                        self.template.get_unchecked(after_bracket_start..),
                     ) {
-                        let text_end = self.cursor + 2 + offset;
+                        // SAFETY: offset returned is smaller than the length of the tail
+                        let text_end = after_bracket_start.unchecked_add(offset);
+
+                        // INVARIANT: text_start and text_end are both valid char offsets inside
+                        // the buffer, since text_end is an index adjacent to one of the ASCII char
+                        // '{' or '}'
+
+                        // SAFETY: text_start and text_end are valid char offsets
                         let s = self.get_unchecked(text_start..text_end);
+                        // SAFETY: text_end is a valid char offset
                         self.cursor = text_end;
                         Ok(Some(IndexedSpan {
                             span: Span::Text(s.into()),
@@ -816,7 +875,9 @@ impl<'fmt> Oneshot<'fmt> {
                     } else {
                         let res = Ok(Some(IndexedSpan {
                             span: Span::Text(
-                                from_utf8_unchecked(&self.template[text_start..]).into(),
+                                // SAFETY: text_start is a valid char offset
+                                from_utf8_unchecked(&self.template.get_unchecked(text_start..))
+                                    .into(),
                             ),
                             offset: text_start,
                         }));
@@ -827,7 +888,8 @@ impl<'fmt> Oneshot<'fmt> {
                 [b'}', ..] => {
                     // unexpected closing bracket which is not escaped
                     let err_start = self.cursor;
-                    self.cursor += 1;
+                    // SAFETY: we just checked that there is a valid ASCII byte
+                    self.cursor = self.cursor.unchecked_add(1);
                     Err(SyntaxError {
                         span: err_start..self.cursor,
                         kind: SyntaxErrorKind::ExtraBracket,
@@ -837,21 +899,42 @@ impl<'fmt> Oneshot<'fmt> {
                     // extended expression
 
                     // we first count how many leading `#` characters there are
-                    let hash_count = self.template[self.cursor + 2..]
+                    // SAFETY: we just checked that there are two a valid ASCII bytes
+                    let hash_count = self
+                        .template
+                        .get_unchecked(self.cursor.unchecked_add(2)..)
                         .iter()
                         .take_while(|b| **b == b'#')
                         .count()
-                        + 1;
-                    let expr_start = self.cursor + 1 + hash_count;
-                    let hash_patt = &self.template[self.cursor + 1..expr_start];
+                        // SAFETY: we skipped two byte, so the maximum remaining bytes must be at
+                        // most usize::MAX - 2, so this is valid
+                        .unchecked_add(1);
 
-                    let tail = &self.template[expr_start..];
+                    // SAFETY: we count for the `{` and 1 for each hash `#`
+                    let expr_start = self.cursor.unchecked_add(1).unchecked_add(hash_count);
+
+                    // INVARIANT: expr_start is a valid char index and > self.cursor + 1
+
+                    // SAFETY: the byte immediately after self.cursor is '{', and we have the
+                    // expr_start invariant
+                    let hash_patt = &self
+                        .template
+                        .get_unchecked(self.cursor.unchecked_add(1)..expr_start);
+
+                    // SAFETY: expr_start is a valid char index
+                    let tail = &self.template.get_unchecked(expr_start..);
                     for idx in memmem::find_iter(tail, hash_patt) {
                         // candidate end: check if the next byte is a closing bracket
-                        let expr_end = expr_start + idx;
-                        if let Some(b'}') = self.template.get(expr_end + hash_count) {
+                        // SAFETY: memmem only returns valid byte indices, and since `hash_patt`
+                        // consists only of ASCII chars, the index is also a valid char index
+                        let expr_end = expr_start.unchecked_add(idx);
+                        // SAFETY: we know there are `hash_count` many bytes following, since this
+                        // is the search pattern
+                        if let Some(b'}') = self.template.get(expr_end.unchecked_add(hash_count)) {
                             let s = self.get_unchecked(expr_start..expr_end);
-                            self.cursor = expr_end + hash_count + 1;
+                            // SAFETY: expr_end is immediately followed by `hash_count` # and 1
+                            // `}`, since we just checked this with `self.template.get`.
+                            self.cursor = expr_end.unchecked_add(hash_count).unchecked_add(1);
                             return Ok(Some(IndexedSpan {
                                 span: Span::Expr(s),
                                 offset: expr_start,
@@ -868,13 +951,20 @@ impl<'fmt> Oneshot<'fmt> {
                 [b'{', ..] => {
                     // normal expression
 
-                    let expr_start = self.cursor + 1;
-                    let tail = &self.template[expr_start..];
+                    // SAFETY: the first byte is '{'
+                    let expr_start = self.cursor.unchecked_add(1);
+                    // SAFETY: the first byte is '{'
+                    let tail = &self.template.get_unchecked(expr_start..);
                     match memchr(b'}', tail) {
                         Some(idx) => {
-                            let expr_end = expr_start + idx;
+                            // SAFETY: the returned index is valid in `tail` which starts at
+                            // position `expr_start` in the original slice
+                            let expr_end = expr_start.unchecked_add(idx);
+                            // SAFETY: they are both valid indices since they are adjacent to `{`
+                            // and `}` bytes respectively
                             let s = self.get_unchecked(expr_start..expr_end);
-                            self.cursor = expr_end + 1;
+                            // SAFETY: we found a `}`, so the next index is still valid
+                            self.cursor = expr_end.unchecked_add(1);
                             Ok(Some(IndexedSpan {
                                 span: Span::Expr(s),
                                 offset: expr_start,
@@ -893,11 +983,16 @@ impl<'fmt> Oneshot<'fmt> {
                 }
                 _ => {
                     // text
+
+                    // SAFETY: self.cursor is valid index
                     let tail = self.template.get_unchecked(self.cursor..);
                     if let Some(offset) = memchr2(b'{', b'}', tail) {
                         let text_start = self.cursor;
-                        let text_end = self.cursor + offset;
+                        // SAFETY: we just found a '{' or '}'
+                        let text_end = self.cursor.unchecked_add(offset);
                         self.cursor += offset;
+                        // SAFETY: these are valid indices which are adjacent to ascii char bytes,
+                        // so slicing is valid
                         let s = self.get_unchecked(text_start..text_end);
                         Ok(Some(IndexedSpan {
                             span: Span::Text(s.into()),
@@ -905,6 +1000,7 @@ impl<'fmt> Oneshot<'fmt> {
                         }))
                     } else {
                         let res = Ok(Some(IndexedSpan {
+                            // SAFETY: self.cursor is valid index, and was used to produce 'tail'
                             span: Span::Text(from_utf8_unchecked(tail).into()),
                             offset: self.cursor,
                         }));
@@ -992,22 +1088,6 @@ pub type BorrowedTemplate<'fmt, A> = Template<&'fmt str, A>;
 /// A type alias for a template which owns its own data.
 pub type OwnedTemplate<A> = Template<Box<str>, A>;
 
-impl<'fmt, T, A> TryFrom<Oneshot<'fmt>> for Template<T, A>
-where
-    T: From<&'fmt str>,
-    A: Ast<'fmt>,
-{
-    type Error = SyntaxError<A::Error>;
-
-    fn try_from(mut value: Oneshot<'fmt>) -> Result<Self, Self::Error> {
-        let mut inner = Vec::new();
-        while let Some(spanned) = value.next_span()? {
-            inner.push(spanned.try_into()?);
-        }
-        Ok(Self { inner })
-    }
-}
-
 impl<T, A> FromIterator<Span<T, A>> for Template<T, A> {
     fn from_iter<I: IntoIterator<Item = Span<T, A>>>(iter: I) -> Self {
         Self {
@@ -1034,8 +1114,9 @@ impl<T, A> Template<T, A> {
         A: Ast<'fmt>,
         T: From<&'fmt str>,
     {
-        let oneshot = Oneshot::new(s);
-        oneshot.try_into()
+        TemplateSpans::new(s)
+            .map(|r| r.map(|s| s.map_text(Into::into)))
+            .collect()
     }
 
     /// A convenience function to render directly into a newly allocated `String`.
