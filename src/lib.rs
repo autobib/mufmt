@@ -318,30 +318,22 @@ pub trait Ast<'fmt>: Sized {
     fn from_expr(expr: &'fmt str) -> Result<Self, Self::Error>;
 }
 
-/// A manifest knows how to render an [`Ast`] to a new string.
+/// A manifest knows how to display an [`Ast`].
 ///
 /// Often, you can use a [provided implementation](types#manifest-implementations).
 ///
-/// Manifest implementations often contain state which is defined at runtime to determine how the
-/// string is compiled.
+/// Manifest implementations typically contain state which determine how the string is
+/// displayed.
 ///
-/// ## No exclusive self reference
-/// A `Manifest` implementation is not provided an exclusive self-reference. There are two reasons
+/// ## No mutable self reference
+/// A `Manifest` implementation is not provided a mutable self-reference. There are two reasons
 /// for this:
 ///
-/// 1. To encourage pure rendering implementations, which makes template rendering more predictable.
+/// 1. To encourage predictable template rendering.
 /// 2. To simplify the use-case of rendering from multiple threads simultaneously.
 ///
 /// If you must, you can work around this API restriction with [interior
 /// mutability](https://doc.rust-lang.org/reference/interior-mutability.html).
-///
-///
-/// ## Trait naming
-/// The trait name comes from two definitions of 'manifest':
-///
-/// 1. Manifest (*verb*): *display or show (a quality or feeling) by one's acts or appearance*
-/// 2. Manifest (*noun*): *a document giving comprehensive details of a ship and its cargo and
-///    other contents, passengers, and crew*
 pub trait Manifest<A> {
     /// An error produced when manifesting.
     type Error;
