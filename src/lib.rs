@@ -10,15 +10,15 @@
 //! In short:
 //!
 //! - The [`Ast`] describes how to parse a template expression into a strongly typed format.
-//! - The [`Manifest`] describes how to display an `Ast`.
-//! - The [`Template`] uses the `Ast` to compile templates and the `Manifest` to render them.
+//! - The [`Manifest`] describes how to display an [`Ast`].
+//! - The [`Template`] uses the [`Ast`] to compile templates and the [`Manifest`] to render them.
 //!
 //! For more information, go to:
 //!
 //! - [Introduction](#introduction): for a quick introduction and basic usage
 //! - [Syntax](#syntax): to understand the global syntax rules
-//! - [`Ast` and `Manifest` overview](#api-overview): for a general overview of the core `Ast` and
-//!   `Manifest` traits
+//! - [`Ast` and `Manifest` overview](#api-overview): for a general overview of the core [`Ast`] and
+//!   [`Manifest`] traits
 //! - [`Template` overview](#template-overview): for an overview of the [`Template`] struct, and
 //!   its cousins [`Oneshot`] and [`TemplateSpans`].
 //! - The [`types`] module: for custom [`Ast`] and [`Manifest`] implementations and a documentation
@@ -173,8 +173,8 @@
 //!     fn manifest(&self, ast: &A) -> Result<impl Display, Self::Error>;
 //! }
 //! ```
-//! A `Manifest` implementation is one which knows how to display any `Ast` of type `A`. A single
-//! type can implement `Manifest` multiple times, depending on the keys which it accepts.
+//! A [`Manifest`] implementation is one which knows how to display any [`Ast`] of type `A`. A single
+//! type can implement [`Manifest`] multiple times, depending on the keys which it accepts.
 //!
 //! A [`Vec`] implemenets [`Manifest`] by converting an index to the corresponding item at that
 //! index:
@@ -194,7 +194,7 @@
 //!     }
 //! }
 //! ```
-//! The returned `Display` implementation is ephemeral. It may borrow from `self` and
+//! The returned [`Display`] implementation is ephemeral. It may borrow from `self` and
 //! also from the `ast`.
 //!
 //! Also see [`ManifestMut`], which permits temporary mutable state while rendering a template.
@@ -331,7 +331,7 @@ pub trait Ast<'fmt>: Sized {
 /// displayed.
 ///
 /// ## Mutable state
-/// A `Manifest` implementation is not provided a mutable self-reference. In order to maintain
+/// A [`Manifest`] implementation is not provided a mutable self-reference. In order to maintain
 /// mutable state which lasts for a single render of a template, implement [`ManifestMut`]
 /// instead.
 pub trait Manifest<A> {
