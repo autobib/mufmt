@@ -197,6 +197,8 @@
 //! The returned `Display` implementation is ephemeral. It may borrow from `self` and
 //! also from the `ast`.
 //!
+//! Also see [`ManifestMut`], which permits temporary mutable state while rendering a template.
+//!
 //! ## Template overview
 //! When you want to work with a template string, you have essentially three options:
 //!
@@ -219,6 +221,9 @@
 //! These methods do not consume the template which allows repeated rendering of the same template.
 //! Moreover, since compilation is separate from rendering, you can report errors
 //! early, before rendering the template.
+//!
+//! The `Template::render*` methods accept a [`ManifestMut`] implementation, but note that any type which implements
+//! [`Manifest`] automatically implements [`ManifestMut`] as well.
 //!
 //! Since a [`Template`] is generic over the text type, some aliases are provided which may be more
 //! convenient:
