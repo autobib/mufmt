@@ -1,12 +1,17 @@
-//! # Error types
+//! # Errors during template compilation and rendering
 //!
-//! This module contains a variety of error types used in this crate.
+//! This module contains a variety of error types which can occur while compiling or rendering
+//! templates.
 //!
-//! - The [`SyntaxError`], [`RenderError`], and [`Error`] contain generics to propogate errors
-//!   which may result from a particular [`Ast`](crate::Ast) or [`Manifest`](crate::Manifest)
-//!   implementation.
+//! The [`SyntaxError`], [`IORenderError`], [`FmtRenderError`], and [`Error`] contain generics to propogate errors
+//! which may result from a particular [`Ast`](crate::Ast) or [`Manifest`](crate::Manifest) implementation.
 
-use std::{convert::Infallible, fmt, io, ops::Range};
+use std::{
+    convert::Infallible,
+    fmt::{self},
+    io,
+    ops::Range,
+};
 
 /// An error while compiling a template string.
 ///
@@ -19,6 +24,21 @@ pub struct SyntaxError<E> {
     pub kind: SyntaxErrorKind<E>,
     /// The range in the template string at which the error occured.
     pub(crate) span: Range<usize>,
+}
+
+/// The type of syntax error which occured.
+///
+/// The [`SyntaxErrorKind::InvalidExpr`] variant is emitted by the particular [`Ast`](crate::Ast)
+/// implementation which is used to parse the template string expressions. It is the associated
+/// [`Ast::Error`](crate::Ast::Error) type.
+#[derive(Debug, PartialEq, Clone)]
+pub enum SyntaxErrorKind<E> {
+    /// The format parsing a expression produced an error.
+    InvalidExpr(E),
+    /// A closing bracket, without a matching opening bracket.
+    ExtraBracket,
+    /// An expression was started, but not closed.
+    UnclosedExpr,
 }
 
 impl<E> SyntaxError<E> {
@@ -63,21 +83,6 @@ impl<E> SyntaxError<E> {
     }
 }
 
-/// The type of syntax error which occured.
-///
-/// The [`SyntaxErrorKind::InvalidExpr`] variant is emitted by the particular [`Ast`](crate::Ast)
-/// implementation which is used to parse the template string expressions. It is the associated
-/// [`Ast::Error`](crate::Ast::Error) type.
-#[derive(Debug, PartialEq, Clone)]
-pub enum SyntaxErrorKind<E> {
-    /// The format parsing a expression produced an error.
-    InvalidExpr(E),
-    /// A closing bracket, without a matching opening bracket.
-    ExtraBracket,
-    /// An expression was started, but not closed.
-    UnclosedExpr,
-}
-
 /// An error while rendering a compiled template string into an [`io::Write`].
 ///
 /// The [`Render`](IORenderError::Render) variant is emitted by the particular
@@ -115,7 +120,7 @@ impl From<IORenderError<Infallible>> for io::Error {
 /// It is the associated [`Manifest::Error`](crate::Manifest::Error) type.
 ///
 /// For infallible rendering, there is a is a `From<FmtRenderError<Infallible>>` implementation for `fmt::Error`.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum FmtRenderError<R> {
     /// A value in an expression could not be rendered.
     Render(R),
@@ -190,4 +195,69 @@ impl<E, R> From<fmt::Error> for Error<E, R> {
     fn from(err: fmt::Error) -> Self {
         Self::Fmt(err)
     }
+}
+
+mod stderror {
+    use super::{Error, FmtRenderError, IORenderError, SyntaxError, SyntaxErrorKind};
+
+    use std::{
+        error::Error as StdError,
+        fmt::{self, Display},
+    };
+
+    impl<E: Display> Display for SyntaxErrorKind<E> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::InvalidExpr(e) => write!(f, "Invalid expression: {e}"),
+                Self::ExtraBracket => {
+                    f.write_str("Unexpected closing bracket '}' without matching opening bracket")
+                }
+                Self::UnclosedExpr => f.write_str("Expression not closed"),
+            }
+        }
+    }
+
+    impl<E: Display> Display for SyntaxError<E> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Template parse error: {}", self.kind)
+        }
+    }
+
+    const RENDER_ERROR_PREFIX: &str = "Failed to render template expression";
+    const FMT_ERROR_PREFIX: &str = "A format error occured while rendering a template";
+    const IO_ERROR_PREFIX: &str = "An IO error occured while rendering a template";
+
+    impl<R: Display> Display for FmtRenderError<R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Render(e) => write!(f, "{RENDER_ERROR_PREFIX}: {e}"),
+                Self::Fmt(e) => write!(f, "{FMT_ERROR_PREFIX}: {e}"),
+            }
+        }
+    }
+
+    impl<R: Display> Display for IORenderError<R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Render(e) => write!(f, "{RENDER_ERROR_PREFIX}: {e}"),
+                Self::IO(e) => write!(f, "{IO_ERROR_PREFIX}: {e}"),
+            }
+        }
+    }
+
+    impl<E: Display, R: Display> Display for Error<E, R> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::Syntax(syntax_error) => syntax_error.fmt(f),
+                Self::Render(e) => write!(f, "{RENDER_ERROR_PREFIX}: {e}"),
+                Self::IO(e) => write!(f, "{IO_ERROR_PREFIX}: {e}"),
+                Self::Fmt(e) => write!(f, "{FMT_ERROR_PREFIX}: {e}"),
+            }
+        }
+    }
+
+    impl<E: StdError> StdError for SyntaxError<E> {}
+    impl<R: StdError> StdError for FmtRenderError<R> {}
+    impl<R: StdError> StdError for IORenderError<R> {}
+    impl<E: StdError, R: StdError> StdError for Error<E, R> {}
 }
