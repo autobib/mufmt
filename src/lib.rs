@@ -377,10 +377,9 @@ pub trait Manifest<A> {
 
 /// A manifest which can display an [`Ast`] using mutable state.
 ///
-/// If you do not need mutable state, implement [`Manifest`] instead. Every implementation of
-/// [`Manifest<A>`] automatically provides an implementation of [`ManifestMut<A>`], which means the
-/// template rendering methods (which accept [`ManifestMut<A>`]) automatically accept
-/// [`Manifest<A>`] as well.
+/// If you do not need mutable state, implement [`Manifest`] instead. There is a
+/// [blanket implementation](ManifestMut#impl-ManifestMut<A>-for-M) of [`ManifestMut<A>`]
+/// for every implementation of [`Manifest<A>`].
 ///
 /// ## Render rules
 /// The mutable state is initialized with [`ManifestMut::init_state`] before the template is
@@ -468,6 +467,11 @@ pub trait ManifestMut<A> {
     }
 }
 
+/// A blanket implementation of [`ManifestMut<A>`] for every [`Manifest<A>`] implementation.
+///
+/// In particular, the rendering methods such as [`Template::render`] and
+/// [`Oneshot::render`] (which require a [`ManifestMut`]) can also be called with a [`Manifest`]
+/// implementation.
 impl<A, M: Manifest<A>> ManifestMut<A> for M {
     type Error = M::Error;
 
