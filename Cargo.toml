@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 name = "mufmt"
 repository = "https://github.com/autobib/mufmt"
-version = "0.2.0"
+version = "0.2.1"
 
 [dependencies]
 memchr = "2.7.6"
