@@ -512,12 +512,18 @@ impl<A, M: Manifest<A>> ManifestMut<A> for M {
 
 /// A component of a template, either text or an expression.
 ///
-/// Internally, a [`Template`] is a [`Vec`] of [`Span`]s, which correspond to subsequent
-/// expressions.
-/// The spans can be accessed using the [`Template::spans`] method.
+/// A μfmt template is internally represented as a list of [`Span`]s. Spans are parsed
+/// deterministically according to [precise breaking rules](TemplateSpans#text-span-breaking).
+///
+/// There are two ways to access the spans associated with a template:
+///
+/// - From a [`Template`] using the [`Template::spans`] method
+/// - As an iterator over the spans of a template string using [`TemplateSpans`].
+///
+/// See the [`TemplateSpans`] documentation for more detail and examples.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Span<T, A> {
-    /// Text, with brackets correctly escaped.
+    /// Text, with brackets unescaped.
     Text(T),
     /// An interpreted expression.
     Expr(A),
