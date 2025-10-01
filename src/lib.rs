@@ -1170,7 +1170,7 @@ impl<'fmt> Oneshot<'fmt> {
 ///
 /// - [`Template::render`] returns a [`String`].
 /// - [`Template::render_io`] writes to an [`io::Write`] implementation, such as a
-///   [`File`](std::fs::File) or [`stdout`](std::io::stdout)).
+///   [`File`](std::fs::File) or [`stdout`](std::io::stdout).
 /// - [`Template::render_fmt`] writes to a [`fmt::Write`] implementation, such as a [`&mut String`](String) buffer.
 ///
 /// Templates are immutable, but you can deconstruct and reconstruct a template using its
