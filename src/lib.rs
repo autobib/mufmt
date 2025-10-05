@@ -399,16 +399,16 @@ pub trait Manifest<A> {
 /// impl ManifestMut<()> for ExprCounter {
 ///     type Error = std::convert::Infallible;
 ///
-///     type State = usize;
+///     type State<'a> = usize;
 ///
-///     fn init_state(&self) -> Self::State {
+///     fn init_state(&self) -> Self::State<'_> {
 ///         0
 ///     }
 ///
 ///     fn manifest_mut(
 ///         &self,
 ///         _: &(),
-///         state: &mut Self::State,
+///         state: &mut Self::State<'_>,
 ///     ) -> Result<impl std::fmt::Display, Self::Error> {
 ///         let res = *state;
 ///         *state += 1;
