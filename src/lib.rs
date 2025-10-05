@@ -732,7 +732,9 @@ where
     /// ```
     /// use mufmt::TemplateSpans;
     ///
-    /// let spans_iter = TemplateSpans::<&str>::new("A template {expr}");
+    /// let mut spans_iter = TemplateSpans::<&str>::new("A template {expr}");
+    /// assert!(spans_iter.next().is_some());
+    /// assert_eq!(spans_iter.remainder(), "{expr}");
     /// ```
     pub fn remainder(&self) -> &'fmt str {
         self.inner.remainder()
