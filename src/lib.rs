@@ -424,16 +424,16 @@ pub trait ManifestMut<A> {
     type Error;
 
     /// Associated mutable state, which lasts for the duration of a single template.
-    type State<'a>;
+    type State<'s>;
 
     /// Initialize mutable state before rendering the template.
     fn init_state(&self) -> Self::State<'_>;
 
     /// Convert the `Ast` to a type which can be displayed.
-    fn manifest_mut(
+    fn manifest_mut<'s>(
         &self,
         ast: &A,
-        state: &mut Self::State<'_>,
+        state: &mut Self::State<'s>,
     ) -> Result<impl fmt::Display, Self::Error>;
 
     /// Write the `Ast` into a [`fmt::Write`] implementation.
