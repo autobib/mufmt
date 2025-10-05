@@ -424,23 +424,23 @@ pub trait ManifestMut<A> {
     type Error;
 
     /// Associated mutable state, which lasts for the duration of a single template.
-    type State;
+    type State<'a>;
 
     /// Initialize mutable state before rendering the template.
-    fn init_state(&self) -> Self::State;
+    fn init_state(&self) -> Self::State<'_>;
 
     /// Convert the `Ast` to a type which can be displayed.
     fn manifest_mut(
         &self,
         ast: &A,
-        state: &mut Self::State,
+        state: &mut Self::State<'_>,
     ) -> Result<impl fmt::Display, Self::Error>;
 
     /// Write the `Ast` into a [`fmt::Write`] implementation.
     fn write_fmt_mut<W: fmt::Write>(
         &self,
         ast: &A,
-        state: &mut Self::State,
+        state: &mut Self::State<'_>,
         mut writer: W,
     ) -> Result<(), FmtRenderError<Self::Error>> {
         Ok(write!(
@@ -455,7 +455,7 @@ pub trait ManifestMut<A> {
     fn write_io_mut<W: io::Write>(
         &self,
         ast: &A,
-        state: &mut Self::State,
+        state: &mut Self::State<'_>,
         mut writer: W,
     ) -> Result<(), IORenderError<Self::Error>> {
         Ok(write!(
@@ -475,16 +475,16 @@ pub trait ManifestMut<A> {
 impl<A, M: Manifest<A>> ManifestMut<A> for M {
     type Error = M::Error;
 
-    type State = ();
+    type State<'a> = ();
 
     #[inline]
-    fn init_state(&self) -> Self::State {}
+    fn init_state(&self) -> Self::State<'_> {}
 
     #[inline]
     fn manifest_mut(
         &self,
         ast: &A,
-        (): &mut Self::State,
+        (): &mut Self::State<'_>,
     ) -> Result<impl fmt::Display, Self::Error> {
         self.manifest(ast)
     }
@@ -493,7 +493,7 @@ impl<A, M: Manifest<A>> ManifestMut<A> for M {
     fn write_fmt_mut<W: fmt::Write>(
         &self,
         ast: &A,
-        (): &mut Self::State,
+        (): &mut Self::State<'_>,
         writer: W,
     ) -> Result<(), FmtRenderError<Self::Error>> {
         self.write_fmt(ast, writer)
@@ -503,7 +503,7 @@ impl<A, M: Manifest<A>> ManifestMut<A> for M {
     fn write_io_mut<W: io::Write>(
         &self,
         ast: &A,
-        (): &mut Self::State,
+        (): &mut Self::State<'_>,
         writer: W,
     ) -> Result<(), IORenderError<Self::Error>> {
         self.write_io(ast, writer)
