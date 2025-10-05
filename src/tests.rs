@@ -1,6 +1,61 @@
 use super::*;
 
 #[test]
+fn lifetimes() {
+    // check that things compile with different lifetimes
+
+    #[allow(unused)]
+    struct S {
+        inner: String,
+    }
+
+    #[allow(unused)]
+    enum OneOf<'a, 'b, 'c, 'd> {
+        A(&'a str),
+        B(&'b str),
+        C(&'c str),
+        D(&'d str),
+    }
+
+    impl<'a, 'b, 'c, 'd> fmt::Display for OneOf<'a, 'b, 'c, 'd> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::A(s) => f.write_str(s),
+                Self::B(s) => f.write_str(s),
+                Self::C(s) => f.write_str(s),
+                Self::D(s) => f.write_str(s),
+            }
+        }
+    }
+
+    impl ManifestMut<String> for S {
+        type Error = ();
+
+        type State<'s> = (bool, bool, &'s str, String);
+
+        fn init_state(&self) -> Self::State<'_> {
+            (true, false, self.inner.trim(), "hello".into())
+        }
+
+        fn manifest_mut(
+            &self,
+            ast: &String,
+            state: &mut Self::State<'_>,
+        ) -> Result<impl fmt::Display, Self::Error> {
+            if state.0 {
+                Ok(OneOf::A(&self.inner))
+            } else if state.1 {
+                Ok(OneOf::B(state.2))
+            } else if !state.0 && !state.1 {
+                Ok(OneOf::C(ast))
+            } else {
+                Ok(OneOf::D(&state.3))
+            }
+        }
+    }
+}
+
+#[test]
 fn parse() {
     fn check_parts<const N: usize>(
         template: &str,

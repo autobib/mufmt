@@ -430,10 +430,10 @@ pub trait ManifestMut<A> {
     fn init_state(&self) -> Self::State<'_>;
 
     /// Convert the `Ast` to a type which can be displayed.
-    fn manifest_mut<'s>(
+    fn manifest_mut(
         &self,
         ast: &A,
-        state: &mut Self::State<'s>,
+        state: &mut Self::State<'_>,
     ) -> Result<impl fmt::Display, Self::Error>;
 
     /// Write the `Ast` into a [`fmt::Write`] implementation.
