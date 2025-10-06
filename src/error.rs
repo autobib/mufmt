@@ -209,10 +209,8 @@ mod stderror {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 Self::InvalidExpr(e) => write!(f, "Invalid expression: {e}"),
-                Self::ExtraBracket => {
-                    f.write_str("Unexpected closing bracket '}' without matching opening bracket")
-                }
-                Self::UnclosedExpr => f.write_str("Expression not closed"),
+                Self::ExtraBracket => f.write_str("Unopened expression"),
+                Self::UnclosedExpr => f.write_str("Unclosed expression"),
             }
         }
     }
