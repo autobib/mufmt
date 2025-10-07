@@ -29,7 +29,7 @@
 //! ```
 //! "Hello {name}!";
 //! ```
-//! Parts outside brackets are referred to as *text* and parts inside brackets are referred to as
+//! Parts outside braces are referred to as *text* and parts inside braces are referred to as
 //! *expressions*. See [syntax](#syntax) for a full description of the syntax.
 //!
 //! However, μfmt does not interpret the contents of expression. Instead, the expression syntax is
@@ -94,15 +94,15 @@
 //! ```
 //!
 //! ## Syntax
-//! A μfmt template is a UTF-8 string where bracket-delimited expressions `{...}` are replaced with values
+//! A μfmt template is a UTF-8 string where brace-delimited expressions `{...}` are replaced with values
 //! when the string is rendered.
 //!
 //! 1. The template not inside an expression are referred to as *text*,  and the parts inside an expression are
 //!    referred to as *expressions*.
 //! 2. Expressions are whitespace trimmed according to the rules of [`trim`](str::trim).
-//! 3. To include brackets inside *text*, doubled brackets (like `{{` and `}}`) result in text
-//!    consisting of a single bracket.
-//! 4. To include brackets inside *expressions*, you can use *extended expression delimiters*: the initial
+//! 3. To include braces inside *text*, doubled braces (like `{{` and `}}`) result in text
+//!    consisting of a single brace.
+//! 4. To include braces inside *expressions*, you can use *extended expression delimiters*: the initial
 //!    `{` of an expression may be followed by any number of `#` characters. Then, the expression can only be
 //!    closed by an equal number of `#` characters, followed by `}`.
 //!
@@ -523,7 +523,7 @@ impl<A, M: Manifest<A>> ManifestMut<A> for M {
 /// See the [`TemplateSpans`] documentation for more detail and examples.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Span<T, A> {
-    /// Text, with brackets unescaped.
+    /// Text, with braces unescaped.
     Text(T),
     /// An interpreted expression.
     Expr(A),
@@ -601,7 +601,7 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 /// continue past the error location if the error type is locally recoverable. This occurs in the
 /// following cases:
 ///
-/// 1. In the presence of an extra closing bracket.
+/// 1. In the presence of an extra closing brace.
 /// 2. If the [`Ast`] implementation fails to parse an expression.
 ///
 /// Here is an example illustrating this behaviour.
@@ -613,7 +613,7 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text(" "))));
 /// assert_eq!(
 ///     spans_iter.next().unwrap().unwrap_err().kind,
-///     SyntaxErrorKind::ExtraBracket,
+///     SyntaxErrorKind::Extrabrace,
 /// );
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("and "))));
 /// assert!(matches!(
@@ -630,33 +630,33 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 ///     spans_iter.next().unwrap().unwrap_err().kind,
 ///     SyntaxErrorKind::UnclosedExpr,
 /// );
-/// // the entire template string was consumed trying to find the closing bracket
+/// // the entire template string was consumed trying to find the closing brace
 /// assert!(spans_iter.next().is_none());
 /// ```
 ///
 /// ## Text span breaking
 /// Approximately speaking, spans are produced to be as large as possible. However, since each span
 /// must refer to a contiguous substring of the original template string (to avoid allocating), a text
-/// span can be broken by an escaped bracket (either `{{` or `}}`).
+/// span can be broken by an escaped brace (either `{{` or `}}`).
 ///
 /// ### Lazy escape breaking
-/// Spans are broken *lazily*: the second char of an escaped bracket is included in the next
+/// Spans are broken *lazily*: the second char of an escaped brace is included in the next
 /// span. In particular, a text span does not contain `{` or `}` except possibly as the first
 /// character of the span.
 ///
 /// Here is an example illustrating this behaviour.
 /// ```
 /// # use mufmt::{Span, TemplateSpans};
-/// let mut spans_iter = TemplateSpans::<usize>::new("Escaped {{bracket}}");
+/// let mut spans_iter = TemplateSpans::<usize>::new("Escaped {{brace}}");
 ///
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("Escaped "))));
-/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("{bracket"))));
+/// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("{brace"))));
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("}"))));
 /// assert_eq!(spans_iter.next(), None);
 /// ```
 /// In particular, lazy span production rules mean that the representation may not be
 /// absolutely minimal: the above example has an equivalent representation in which the second span
-/// is `Span::Text("{bracket}")`. This representation will never be produced.
+/// is `Span::Text("{brace}")`. This representation will never be produced.
 ///
 /// ### No spurious text spans
 /// Text spans are guaranteed to be non-empty.
@@ -704,7 +704,7 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 /// let mut spans_iter = TemplateSpans::<&str>::new("Only text");
 /// assert_eq!(spans_iter.size_hint().0, spans_iter.count());
 ///
-/// // An alternating sequence of text blocks and extra closing brackets (resulting in errors)
+/// // An alternating sequence of text blocks and extra closing braces (resulting in errors)
 /// // attains the size hint limit
 /// let mut spans_iter = TemplateSpans::<&str>::new("0}0}");
 /// assert_eq!(spans_iter.size_hint().1, Some(spans_iter.count()));
@@ -991,26 +991,26 @@ impl<'fmt> Oneshot<'fmt> {
             match tail {
                 [] => Ok(None),
                 [b'{', b'{', ..] | [b'}', b'}', ..] => {
-                    // single escaped bracket
+                    // single escaped brace
 
                     // we opportunistically try to read as many characters as possible,
-                    // as long as they are not more brackets
+                    // as long as they are not more braces
 
                     // SAFETY: we just checked that there is another byte which is an ASCII char
                     let text_start = self.cursor.unchecked_add(1);
 
                     // SAFETY: we just checked that there are two initial bytes which are ASCII
                     // char
-                    let after_bracket_start = self.cursor.unchecked_add(2);
+                    let after_brace_start = self.cursor.unchecked_add(2);
 
                     if let Some(offset) = memchr2(
                         b'{',
                         b'}',
                         // SAFETY: the two bytes we just read are ASCII char
-                        self.template.get_unchecked(after_bracket_start..),
+                        self.template.get_unchecked(after_brace_start..),
                     ) {
                         // SAFETY: offset returned is smaller than the length of the tail
-                        let text_end = after_bracket_start.unchecked_add(offset);
+                        let text_end = after_brace_start.unchecked_add(offset);
 
                         // INVARIANT: text_start and text_end are both valid char offsets inside
                         // the buffer, since text_end is an index adjacent to one of the ASCII char
@@ -1038,13 +1038,13 @@ impl<'fmt> Oneshot<'fmt> {
                     }
                 }
                 [b'}', ..] => {
-                    // unexpected closing bracket which is not escaped
+                    // unexpected closing brace which is not escaped
                     let err_start = self.cursor;
                     // SAFETY: we just checked that there is a valid ASCII byte
                     self.cursor = self.cursor.unchecked_add(1);
                     Err(SyntaxError {
                         span: err_start..self.cursor,
-                        kind: SyntaxErrorKind::ExtraBracket,
+                        kind: SyntaxErrorKind::ExtraBrace,
                     })
                 }
                 [b'{', b'#', ..] => {
@@ -1076,7 +1076,7 @@ impl<'fmt> Oneshot<'fmt> {
                     // SAFETY: expr_start is a valid char index
                     let tail = &self.template.get_unchecked(expr_start..);
                     for idx in memmem::find_iter(tail, hash_patt) {
-                        // candidate end: check if the next byte is a closing bracket
+                        // candidate end: check if the next byte is a closing brace
                         // SAFETY: memmem only returns valid byte indices, and since `hash_patt`
                         // consists only of ASCII chars, the index is also a valid char index
                         let expr_end = expr_start.unchecked_add(idx);

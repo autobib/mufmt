@@ -35,8 +35,8 @@ pub struct SyntaxError<E> {
 pub enum SyntaxErrorKind<E> {
     /// The format parsing a expression produced an error.
     InvalidExpr(E),
-    /// A closing bracket, without a matching opening bracket.
-    ExtraBracket,
+    /// A closing brace, without a matching opening brace.
+    ExtraBrace,
     /// An expression was started, but not closed.
     UnclosedExpr,
 }
@@ -75,9 +75,9 @@ impl<E> SyntaxError<E> {
     ///
     /// Syntax Error Kind | Range
     /// ------------------|------
-    /// [`SyntaxErrorKind::InvalidExpr`] | the contents of the expression before trimming whitespace, but not including the brackets.
-    /// [`SyntaxErrorKind::ExtraBracket`] | a range of length 1 containing precisely the extra bracket.
-    /// [`SyntaxErrorKind::UnclosedExpr`] | a range starting before the expression bracket and terminating at the end of the template string.
+    /// [`SyntaxErrorKind::InvalidExpr`] | the contents of the expression before trimming whitespace, but not including the braces.
+    /// [`SyntaxErrorKind::ExtraBrace`] | a range of length 1 containing precisely the extra brace.
+    /// [`SyntaxErrorKind::UnclosedExpr`] | a range starting before the expression brace and terminating at the end of the template string.
     pub fn locate(&self) -> Range<usize> {
         self.span.clone()
     }
@@ -209,7 +209,7 @@ mod stderror {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 Self::InvalidExpr(e) => write!(f, "Invalid expression: {e}"),
-                Self::ExtraBracket => f.write_str("Unopened expression"),
+                Self::ExtraBrace => f.write_str("Unopened expression"),
                 Self::UnclosedExpr => f.write_str("Unclosed expression"),
             }
         }

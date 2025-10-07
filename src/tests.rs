@@ -80,10 +80,10 @@ fn parse() {
     );
 
     check_parts(
-        "A {{bracket}}",
+        "A {{brace}}",
         [
             (Span::Text("A "), 0),
-            (Span::Text("{bracket"), 3),
+            (Span::Text("{brace"), 3),
             (Span::Text("}"), 12),
         ],
     );
@@ -151,7 +151,7 @@ fn parse_err() {
         oneshot.next_span::<&str, ()>(),
         Err(SyntaxError {
             span: 1..2,
-            kind: SyntaxErrorKind::ExtraBracket
+            kind: SyntaxErrorKind::ExtraBrace
         })
     );
 }
