@@ -40,7 +40,7 @@
 //!
 //! // The `Ast` is &str
 //! let template = BorrowedTemplate::<&str>::compile("Hello {name}!").unwrap();
-//! // The `Manifest` is `HashMap<str, str>`
+//! // The `Manifest` is `HashMap<&str, &str>`
 //! let mfst = HashMap::from([("name", "John")]);
 //!
 //! assert_eq!(template.render(&mfst).unwrap(), "Hello John!");
