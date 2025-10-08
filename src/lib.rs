@@ -194,7 +194,7 @@
 //!     }
 //! }
 //! ```
-//! The returned [`Display`] implementation is ephemeral. It may borrow from `self` and
+//! The returned [`Display`](fmt::Display) implementation is ephemeral. It may borrow from `self` and
 //! also from the `ast`.
 //!
 //! Also see [`ManifestMut`], which permits temporary mutable state while rendering a template.
