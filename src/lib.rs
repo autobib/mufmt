@@ -1175,9 +1175,6 @@ impl<'fmt> Oneshot<'fmt> {
 ///   [`File`](std::fs::File) or [`stdout`](std::io::stdout).
 /// - [`Template::render_fmt`] writes to a [`fmt::Write`] implementation, such as a [`&mut String`](String) buffer.
 ///
-/// Templates are immutable, but you can deconstruct and reconstruct a template using its
-/// [`IntoIterator`] and [`FromIterator`] implementations.
-///
 /// ## Type parameters
 /// A `Template` is generic over two type parameters:
 ///
@@ -1220,8 +1217,14 @@ impl<'fmt> Oneshot<'fmt> {
 /// ```
 ///
 /// ## Template spans
-/// A template is internally a [`Vec`] of [`Span`]s with additional metadata.
+/// A template is essentially a [`Vec`] of [`Span`]s. You can:
 ///
+/// - Access the spans with [`Template::spans`].
+/// - Use the [`IntoIterator`] and [`FromIterator`] implementations to convert to and from
+///   iterators of spans.
+/// - Use the [`Extend`] implementation to add append new spans to the end of the template.
+///
+/// ## Examples
 /// Access the spans with [`Template::spans`].
 /// ```
 /// # use mufmt::{Span, Template};
@@ -1230,7 +1233,7 @@ impl<'fmt> Oneshot<'fmt> {
 /// assert_eq!(template.spans().len(), 4);
 /// assert_eq!(template.spans().get(3), Some(&Span::Expr(12)));
 /// ```
-/// Then, modify the template by decomposing it into spans and then reconstructing it.
+/// Decomposing the template into spans and then reconstruct it.
 /// ```
 /// # use mufmt::{Span, Template};
 /// # let template = Template::<&str, usize>::compile("Items {1} and {12}").unwrap();
@@ -1288,6 +1291,12 @@ impl<T, A> IntoIterator for Template<T, A> {
     }
 }
 
+impl<T, A> Extend<Span<T, A>> for Template<T, A> {
+    fn extend<I: IntoIterator<Item = Span<T, A>>>(&mut self, iter: I) {
+        self.inner.extend(iter);
+    }
+}
+
 impl<T, A> Template<T, A> {
     /// Compile the provided template string, interpreting the expressions using the `Ast`.
     #[inline]
@@ -1299,6 +1308,15 @@ impl<T, A> Template<T, A> {
         TemplateSpans::new(s)
             .map(|r| r.map(|s| s.map_text(Into::into)))
             .collect()
+    }
+
+    /// Returns a slice of the template spans.
+    ///
+    /// If this template was compiled using [`Template::compile`], the spans will satisfy
+    /// [precise text breaking rules](TemplateSpans#text-span-breaking).
+    #[inline]
+    pub fn spans(&self) -> &[Span<T, A>] {
+        &self.inner
     }
 
     /// A convenience function to render directly into a newly allocated `String`.
@@ -1373,15 +1391,6 @@ impl<T, A> Template<T, A> {
         }
 
         Ok(())
-    }
-
-    /// Returns a slice of the template spans.
-    ///
-    /// If this template was compiled using [`Template::compile`], the spans will satisfy
-    /// [precise text breaking rules](TemplateSpans#text-span-breaking).
-    #[inline]
-    pub fn spans(&self) -> &[Span<T, A>] {
-        &self.inner
     }
 }
 
