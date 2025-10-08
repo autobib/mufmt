@@ -70,7 +70,7 @@
 //! template.render_fmt(&new_mfst, &mut buf).unwrap();
 //! assert_eq!(buf, "Letter: b");
 //!
-//! // the intermediate syntax type is a `usize`, which is used to index into the vec
+//! // the `Ast` is a `usize`, which is used to index into the vec
 //! // if the user provides an invalid type, compilation will fail
 //! assert!(BorrowedTemplate::<usize>::compile("{-100}").is_err()); // SyntaxError::Ast(ParseIntError, ...)
 //! assert!(BorrowedTemplate::<i8>::compile("{-100}").is_ok());
@@ -106,7 +106,7 @@
 //!    `{` of an expression may be followed by any number of `#` characters. Then, the expression can only be
 //!    closed by an equal number of `#` characters, followed by `}`.
 //!
-//! Otherwise, the interpretation of contents of the expressions are defined by the specific implementation.
+//! Otherwise, the interpretation of contents of the expressions are defined by the specific [`Ast`] implementation.
 //!
 //! Here are examples for each of the above points.
 //!
