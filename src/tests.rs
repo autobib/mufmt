@@ -84,7 +84,7 @@ fn parse() {
         [
             (Span::Text("A "), 0),
             (Span::Text("{brace"), 3),
-            (Span::Text("}"), 12),
+            (Span::Text("}"), 10),
         ],
     );
 

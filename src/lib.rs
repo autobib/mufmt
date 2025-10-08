@@ -613,7 +613,7 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text(" "))));
 /// assert_eq!(
 ///     spans_iter.next().unwrap().unwrap_err().kind,
-///     SyntaxErrorKind::Extrabrace,
+///     SyntaxErrorKind::ExtraBrace,
 /// );
 /// assert_eq!(spans_iter.next(), Some(Ok(Span::Text("and "))));
 /// assert!(matches!(
