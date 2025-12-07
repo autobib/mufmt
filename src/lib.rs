@@ -576,10 +576,15 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
     fn try_from(spanned: IndexedSpan<'fmt, T>) -> Result<Self, Self::Error> {
         Ok(match spanned.span {
             Span::Text(s) => Self::Text(s),
-            Span::Expr(s) => Self::Expr(A::from_expr(s.trim()).map_err(|e| SyntaxError {
-                kind: SyntaxErrorKind::InvalidExpr(e),
-                span: spanned.offset..spanned.offset + s.len(),
-            })?),
+            Span::Expr(s) => {
+                let ts = s.trim_start();
+                let leading_ws = s.len() - ts.len();
+                let tse = ts.trim_end();
+                Self::Expr(A::from_expr(tse).map_err(|e| SyntaxError {
+                    kind: SyntaxErrorKind::InvalidExpr(e),
+                    span: spanned.offset + leading_ws..spanned.offset + leading_ws + tse.len(),
+                })?)
+            }
         })
     }
 }

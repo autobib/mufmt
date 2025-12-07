@@ -110,6 +110,10 @@ fn parse() {
     check_parts("{## #}##}", [(Span::Expr(" #}"), 3)]);
     check_parts("{# ##}", [(Span::Expr(" #"), 2)]);
     check_parts("{## ####}", [(Span::Expr(" ##"), 3)]);
+
+    // whitespace handling is only propagated to the error; we always keep track of
+    // the full span internally so that spans are contiguous
+    check_parts("A {  b}", [(Span::Text("A "), 0), (Span::Expr("  b"), 3)]);
 }
 
 #[test]
@@ -167,12 +171,12 @@ fn parse_err_location() {
     assert_eq!(
         err,
         SyntaxError {
-            span: 2..8,
+            span: 3..6,
             kind: SyntaxErrorKind::InvalidExpr(usize_err),
         }
     );
 
-    assert_eq!(&s[err.locate()], " bad  ");
+    assert_eq!(&s[err.locate()], "bad");
 }
 
 #[test]
