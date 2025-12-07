@@ -74,10 +74,10 @@ impl<E> SyntaxError<E> {
     /// # Ranges
     /// The provided ranges depend on the error kind:
     ///
-    /// Syntax Error Kind | Range
-    /// ------------------|------
-    /// [`SyntaxErrorKind::InvalidExpr`] | the contents of the expression before trimming whitespace, but not including the braces.
-    /// [`SyntaxErrorKind::ExtraBrace`] | a range of length 1 containing precisely the extra brace.
+    /// Syntax error kind                 | Range
+    /// ----------------------------------|------
+    /// [`SyntaxErrorKind::InvalidExpr`]  | the contents after removing the braces and trimming whitespace.
+    /// [`SyntaxErrorKind::ExtraBrace`]   | a range of length 1 containing precisely the extra brace.
     /// [`SyntaxErrorKind::UnclosedExpr`] | a range starting before the expression brace and terminating at the end of the template string.
     pub fn locate(&self) -> Range<usize> {
         self.span.clone()
@@ -209,9 +209,9 @@ mod stderror {
     impl<E: Display> Display for SyntaxErrorKind<E> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                Self::InvalidExpr(e) => write!(f, "Invalid expression: {e}"),
-                Self::ExtraBrace => f.write_str("Unopened expression"),
-                Self::UnclosedExpr => f.write_str("Unclosed expression"),
+                Self::InvalidExpr(e) => write!(f, "invalid expression: {e}"),
+                Self::ExtraBrace => f.write_str("unopened expression"),
+                Self::UnclosedExpr => f.write_str("unclosed expression"),
             }
         }
     }
@@ -222,9 +222,9 @@ mod stderror {
         }
     }
 
-    const RENDER_ERROR_PREFIX: &str = "Failed to render template expression";
-    const FMT_ERROR_PREFIX: &str = "A format error occured while rendering a template";
-    const IO_ERROR_PREFIX: &str = "An IO error occured while rendering a template";
+    const RENDER_ERROR_PREFIX: &str = "failed to render template expression";
+    const FMT_ERROR_PREFIX: &str = "format error occured while rendering a template";
+    const IO_ERROR_PREFIX: &str = "IO error occured while rendering a template";
 
     impl<R: Display> Display for FmtRenderError<R> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
