@@ -261,8 +261,10 @@
 //! contains the [`Span`]s without the possible syntax errors.
 
 #![deny(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "derive")]
+#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
 pub use mufmt_derive::Ast;
 
 mod error;

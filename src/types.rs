@@ -27,7 +27,7 @@
 //! The following additional types are parsed using their [`FromStr`][F] implementations:
 //! - [`IpAddr`](std::net::IpAddr), [`Ipv4Addr`](std::net::Ipv4Addr), [`Ipv6Addr`](std::net::Ipv6Addr), [`SocketAddr`](std::net::SocketAddr), [`SocketAddrV4`](std::net::SocketAddrV4), [`SocketAddrV6`](std::net::SocketAddrV6)
 //!
-//! You can implement [`Ast`](crate::Ast) on your own types which implement [`FromStr`][F] using the [`ast_from_str`] macro.
+//! You can implement [`Ast`](crate::Ast) on your own types which implement [`FromStr`][F] using the [`Ast`](../derive.Ast.html) derive macro.
 //!
 //! The following table summarizes the implementations on types defined in this module.
 //!
@@ -85,7 +85,7 @@ mod manifest;
 
 use std::num::{IntErrorKind, ParseIntError};
 
-pub use ast::{BoundedInt, IgnoredAny, ast_from_str};
+pub use ast::{BoundedInt, IgnoredAny};
 
 /// An index is out of range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

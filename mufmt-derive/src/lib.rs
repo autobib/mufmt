@@ -8,15 +8,34 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
+/// # use mufmt_derive::Ast;
 /// use mufmt::Ast;
 ///
 /// #[derive(Ast)]
 /// struct MyType {
 ///     value: String,
 /// }
-///
-/// // This generates:
+/// # impl std::str::FromStr for MyType {
+/// #     type Err = std::convert::Infallible;
+/// #     fn from_str(s: &str) -> Result<Self, Self::Err> {
+/// #         Ok(Self {
+/// #             value: s.into(),
+/// #         })
+/// #     }
+/// # }
+/// ```
+/// This generates:
+/// ```
+/// # use mufmt::Ast;
+/// # impl std::str::FromStr for MyType {
+/// #     type Err = std::convert::Infallible;
+/// #     fn from_str(s: &str) -> Result<Self, Self::Err> {
+/// #         Ok(Self {
+/// #             value: s.into(),
+/// #         })
+/// #     }
+/// # }
 /// impl Ast<'_> for MyType {
 ///     type Error = <MyType as std::str::FromStr>::Err;
 ///

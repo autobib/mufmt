@@ -12,37 +12,24 @@ use std::{
 use super::{IndexOutOfRange, NotEmpty, ParseBoundedIntError};
 use crate::Ast;
 
-/// A convenience macro to implement [`Ast`] for a type which implements
-/// [`FromStr`](std::str::FromStr).
-///
-/// Note that `FromStr` has no associated lifetime, so such an implementation cannot borrow from the
-/// original string.
-///
-/// ## Example
-/// ```
-/// enum Size {
-///     Small,
-///     Big,
-/// }
-///
-/// impl std::str::FromStr for Size {
-///     type Err = String;
-///
-///     fn from_str(s: &str) -> Result<Self, Self::Err> {
-///         match s {
-///             "small" => Ok(Self::Small),
-///             "big" => Ok(Self::Big),
-///             s => Err(format!("Invalid size: {s}")),
-///         }
-///     }
-/// }
-///
-/// mufmt::types::ast_from_str!(Size);
-/// // Now, `Size` implements `Ast`.
-/// ```
-#[macro_export]
+macro_rules! ast_from_new {
+    ($($ast:tt)*) => {
+        $(
+            impl<'fmt, T: $crate::Ast<'fmt>> $crate::Ast<'fmt> for $ast<T> {
+                type Error = T::Error;
+
+                fn from_expr(s: &'fmt str) -> Result<Self, Self::Error> {
+                    Ok($ast::new(T::from_expr(s)?))
+                }
+            }
+        )*
+    };
+}
+
+ast_from_new!(Box Arc Rc);
+
 macro_rules! ast_from_str {
-    ($($ast:ty),*) => {
+    ($($ast:ty)*) => {
         $(
             impl $crate::Ast<'_> for $ast {
                 type Error = <$ast as ::std::str::FromStr>::Err;
@@ -55,7 +42,20 @@ macro_rules! ast_from_str {
     };
 }
 
-pub use ast_from_str;
+ast_from_str!(
+    // str types
+    String PathBuf char
+    // std::net
+    IpAddr Ipv4Addr Ipv6Addr SocketAddr SocketAddrV4 SocketAddrV6
+    // bool
+    bool
+    // numeric types
+    usize u8 u16 u32 u64 u128
+    isize i8 i16 i32 i64 i128
+    NonZero<usize> NonZero<u8> NonZero<u16> NonZero<u32> NonZero<u64> NonZero<u128>
+    NonZero<isize> NonZero<i8> NonZero<i16> NonZero<i32> NonZero<i64> NonZero<i128>
+    f32 f64
+);
 
 /// A `usize` in the range `0..N`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -74,22 +74,6 @@ impl<'fmt, T: Ast<'fmt>> Ast<'fmt> for Option<T> {
         }
     }
 }
-
-macro_rules! ast_from_new {
-    ($($ast:tt),*) => {
-        $(
-            impl<'fmt, T: $crate::Ast<'fmt>> $crate::Ast<'fmt> for $ast<T> {
-                type Error = T::Error;
-
-                fn from_expr(s: &'fmt str) -> Result<Self, Self::Error> {
-                    Ok($ast::new(T::from_expr(s)?))
-                }
-            }
-        )*
-    };
-}
-
-ast_from_new!(Box, Arc, Rc);
 
 impl<'fmt, T: Ast<'fmt>> Ast<'fmt> for Result<T, T::Error> {
     type Error = Infallible;
@@ -132,49 +116,6 @@ impl<const N: usize> Ast<'_> for BoundedInt<N> {
         }
     }
 }
-
-ast_from_str!(
-    // str types
-    String,
-    PathBuf,
-    char,
-    // std::net
-    IpAddr,
-    Ipv4Addr,
-    Ipv6Addr,
-    SocketAddr,
-    SocketAddrV4,
-    SocketAddrV6,
-    // bool
-    bool,
-    // numeric types
-    usize,
-    u8,
-    u16,
-    u32,
-    u64,
-    u128,
-    isize,
-    i8,
-    i16,
-    i32,
-    i64,
-    i128,
-    NonZero<usize>,
-    NonZero<u8>,
-    NonZero<u16>,
-    NonZero<u32>,
-    NonZero<u64>,
-    NonZero<u128>,
-    NonZero<isize>,
-    NonZero<i8>,
-    NonZero<i16>,
-    NonZero<i32>,
-    NonZero<i64>,
-    NonZero<i128>,
-    f32,
-    f64
-);
 
 impl<'fmt> Ast<'fmt> for &'fmt str {
     type Error = Infallible;
