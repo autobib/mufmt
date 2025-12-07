@@ -1,11 +1,11 @@
 [package]
-name = "mufmt-derive"
-version = "0.4.4"
 authors = ["Alex Rutar <alex@rutar.org>"]
+description = "Derive macros for mufmt"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "Derive macros for mufmt"
+name = "mufmt-derive"
 repository = "https://github.com/autobib/mufmt"
+version = "0.1.0"
 
 [lib]
 proc-macro = true
@@ -16,4 +16,4 @@ quote = "1.0"
 proc-macro2 = "1.0"
 
 [dev-dependencies]
-mufmt = { version = "*", path = ".." }
+mufmt = "0.4.4"

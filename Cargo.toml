@@ -6,19 +6,19 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 name = "mufmt"
 repository = "https://github.com/autobib/mufmt"
-version = "0.4.4"
+version = "0.5.0"
 
 [dependencies]
 memchr = "2.7.6"
-mufmt-derive = { version = "0.4.4", path = "./mufmt-derive", optional = true }
-
-[features]
-default = []
-derive = ["dep:mufmt-derive"]
+mufmt-derive = { version = "0.1.0", path = "mufmt-derive", optional = true }
 
 [workspace]
 members = ["mufmt-derive"]
 resolver = "2"
+
+[features]
+default = []
+derive = ["dep:mufmt-derive"]
 
 [[example]]
 name = "basic"

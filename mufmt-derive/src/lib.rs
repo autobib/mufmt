@@ -28,6 +28,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// This generates:
 /// ```
 /// # use mufmt::Ast;
+/// # struct MyType {
+/// #     value: String,
+/// # }
 /// # impl std::str::FromStr for MyType {
 /// #     type Err = std::convert::Infallible;
 /// #     fn from_str(s: &str) -> Result<Self, Self::Err> {
