@@ -48,13 +48,14 @@ impl<E> SyntaxError<E> {
     /// and represents the location at which the error was produced.
     ///
     /// # Examples
-    /// An expression failed to parse: recover the original expression text.
+    /// An expression failed to parse: recover the original expression text. This correctly takes
+    /// into whitespace.
     /// ```
     /// use mufmt::Template;
     ///
     /// let s = "{ not a usize}";
     /// let err = Template::<&str, usize>::compile(s).unwrap_err();
-    /// assert_eq!(&s[err.locate()], " not a usize");
+    /// assert_eq!(&s[err.locate()], "not a usize");
     /// ```
     /// Get the index of an unclosed delimeter.
     /// ```
