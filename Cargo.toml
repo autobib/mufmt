@@ -10,11 +10,24 @@ version = "0.4.4"
 
 [dependencies]
 memchr = "2.7.6"
+mufmt-derive = { version = "0.4.4", path = "./mufmt-derive", optional = true }
+
+[features]
+default = []
+derive = ["dep:mufmt-derive"]
+
+[workspace]
+members = ["mufmt-derive"]
+resolver = "2"
 
 [[example]]
 name = "basic"
 crate-type = ["staticlib"]
 test = true
+
+[[example]]
+name = "derive"
+required-features = ["derive"]
 
 [lints.clippy]
 redundant_closure_for_method_calls = "warn"

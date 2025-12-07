@@ -1,0 +1,16 @@
+[package]
+name = "mufmt-derive"
+version = "0.4.4"
+authors = ["Alex Rutar <alex@rutar.org>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Derive macros for mufmt"
+repository = "https://github.com/autobib/mufmt"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2.0", features = ["derive"] }
+quote = "1.0"
+proc-macro2 = "1.0"

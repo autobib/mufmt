@@ -262,6 +262,9 @@
 
 #![deny(missing_docs)]
 
+#[cfg(feature = "derive")]
+pub use mufmt_derive::Ast;
+
 mod error;
 #[cfg(test)]
 mod tests;
