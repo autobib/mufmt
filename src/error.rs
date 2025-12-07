@@ -49,7 +49,7 @@ impl<E> SyntaxError<E> {
     ///
     /// # Examples
     /// An expression failed to parse: recover the original expression text. This correctly takes
-    /// into whitespace.
+    /// into account whitespace.
     /// ```
     /// use mufmt::Template;
     ///
