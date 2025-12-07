@@ -112,7 +112,7 @@
 //!
 //! 1. `"Hello {name}!"` is text `Hello `, then an expression `name`, then text `!`.
 //! 2. `"Hello { name  }!"` is equivalent to the above example.
-//! 3. `"{{{contents}"` is text `{{`, then an expression `contents`.
+//! 3. `"{{{contents}"` is text `{`, then an expression `contents`.
 //! 4. `"{## #}##}"` is an expression `#}`.
 //!
 //! ## API overview
