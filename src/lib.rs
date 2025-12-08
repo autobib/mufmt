@@ -1,9 +1,9 @@
-//! # μfmt
+//! # Mufmt
 //!
-//! μfmt (`mufmt`) is a minimal and extensible runtime formatting library.
+//! Mufmt is a minimal and extensible runtime formatting library.
 //!
-//! μfmt allows arbitrary types to define a formatting syntax and compiled template
-//! format. μfmt also provides a number of built-in formats, backed by data stored in
+//! mufmt allows arbitrary types to define a formatting syntax and compiled template
+//! format. mufmt also provides a number of built-in formats, backed by data stored in
 //! collection types like [`HashMap`](std::collections::HashMap) or [`Vec`].
 //!
 //! The main API entrypoints are [`Ast`], [`Manifest`], and [`Template`].
@@ -25,14 +25,14 @@
 //!   of the implementations for the standard library.
 //!
 //! ## Introduction
-//! μfmt templates are similar to Rust format strings:
+//! mufmt templates are similar to Rust format strings:
 //! ```
 //! "Hello {name}!";
 //! ```
 //! Parts outside braces are referred to as *text* and parts inside braces are referred to as
 //! *expressions*. See [syntax](#syntax) for a full description of the syntax.
 //!
-//! However, μfmt does not interpret the contents of expression. Instead, the expression syntax is
+//! However, mufmt does not interpret the contents of expression. Instead, the expression syntax is
 //! defined by an [`Ast`] implementation.
 //! ```
 //! use mufmt::BorrowedTemplate;
@@ -94,7 +94,7 @@
 //! ```
 //!
 //! ## Syntax
-//! A μfmt template is a UTF-8 string where brace-delimited expressions `{...}` are replaced with values
+//! A mufmt template is a UTF-8 string where brace-delimited expressions `{...}` are replaced with values
 //! when the string is rendered.
 //!
 //! 1. The template not inside an expression are referred to as *text*,  and the parts inside an expression are
@@ -118,7 +118,7 @@
 //! ## API overview
 //! Broadly speaking, template rendering is split into two independent phases.
 //!
-//! 1. A template string `"Hello {name}"` is compiled by the μfmt [syntax](#syntax) and the expression
+//! 1. A template string `"Hello {name}"` is compiled by the mufmt [syntax](#syntax) and the expression
 //!    parsing rules defined by the [`Ast`] implementation. The compiled representation is a
 //!    [`Template`] and an error during this phase is a [`SyntaxError`].
 //! 2. The compiled template is combined with additional data via a [`Manifest`]
@@ -517,7 +517,7 @@ impl<A, M: Manifest<A>> ManifestMut<A> for M {
 
 /// A component of a template, either text or an expression.
 ///
-/// A μfmt template is internally represented as a list of [`Span`]s. Spans are parsed
+/// A mufmt template is internally represented as a list of [`Span`]s. Spans are parsed
 /// deterministically according to [precise breaking rules](TemplateSpans#text-span-breaking).
 ///
 /// There are two ways to access the spans associated with a template:
