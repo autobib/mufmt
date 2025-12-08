@@ -10,3 +10,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added method `TemplateSpans::offset` to return the current byte offset inside the template string.
 - Added new `Placeholder` manifest, which ignores the expression type and writes a placeholder value in its place.
+- Added new `ManifestMut::finalize_state` to run custom cleanup code after rendering is complete.

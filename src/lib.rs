@@ -391,6 +391,8 @@ pub trait Manifest<A> {
 
 /// A manifest which can display an [`Ast`] using mutable state.
 ///
+/// The mutable state lasts for the duration of a single render call.
+///
 /// If you do not need mutable state, implement [`Manifest`] instead. There is a
 /// [blanket implementation](ManifestMut#impl-ManifestMut<A>-for-M) of [`ManifestMut<A>`]
 /// for every implementation of [`Manifest<A>`].
@@ -398,13 +400,12 @@ pub trait Manifest<A> {
 /// ## Render rules
 /// The mutable state is initialized with [`ManifestMut::init_state`] before the template is
 /// rendered. This state is subsequently passed to each invocation of
-/// [`ManifestMut::manifest_mut`], and then dropped after the final invocation.
+/// [`ManifestMut::manifest_mut`], and then cleaned up with [`ManifestMut::finalize_state`] after the final invocation.
 ///
 /// The calls to `manifest_mut` are in the order in which expressions appear in the template.
 ///
 /// ## Example
-/// Here is an example which replaces each (empty) expression with the index at which it occurred
-/// in the template.
+/// Replace each (empty) expression with the index at which it occurred in the template.
 /// ```
 /// use mufmt::{ManifestMut, Template};
 ///
@@ -449,6 +450,13 @@ pub trait ManifestMut<A> {
         ast: &A,
         state: &mut Self::State<'_>,
     ) -> Result<impl fmt::Display, Self::Error>;
+
+    /// Clean up mutable state after rendering the template.
+    ///
+    /// The default implementation just drops the state.
+    fn finalize_state(&self, state: Self::State<'_>) {
+        drop(state);
+    }
 
     /// Write the `Ast` into a [`fmt::Write`] implementation.
     fn write_fmt_mut<W: fmt::Write>(
@@ -969,6 +977,7 @@ impl<'fmt> Oneshot<'fmt> {
                 }
             }
         }
+        mfst.finalize_state(state);
 
         Ok(buf)
     }
@@ -996,6 +1005,7 @@ impl<'fmt> Oneshot<'fmt> {
                 }
             }
         }
+        mfst.finalize_state(state);
 
         Ok(())
     }
@@ -1020,6 +1030,7 @@ impl<'fmt> Oneshot<'fmt> {
                 }
             }
         }
+        mfst.finalize_state(state);
 
         Ok(())
     }
@@ -1420,6 +1431,7 @@ impl<T, A> Template<T, A> {
                 }
             }
         }
+        mfst.finalize_state(state);
 
         Ok(buf)
     }
@@ -1445,6 +1457,7 @@ impl<T, A> Template<T, A> {
                 }
             }
         }
+        mfst.finalize_state(state);
 
         Ok(())
     }
@@ -1467,6 +1480,7 @@ impl<T, A> Template<T, A> {
                 }
             }
         }
+        mfst.finalize_state(state);
 
         Ok(())
     }
