@@ -10,7 +10,7 @@ Mufmt also provides a number of built-in formats, backed by data stored in colle
 Key features:
 
 - Separate parsing and interpolation stages, generic over the intermediate representation.
-- Very lightweight: one `Vec` for compiled templates and no allocations for one-off rendering.
+- Very lightweight: one `Vec` for [compiled templates](https://docs.rs/mufmt/latest/mufmt/struct.Template.html#template-spans) and no allocations for [one-off rendering](https://docs.rs/mufmt/latest/mufmt/struct.Oneshot.html).
 - [Fine-grained](https://docs.rs/mufmt/latest/mufmt/struct.TemplateSpans.html#error-recovery) [span-based](https://docs.rs/mufmt/latest/mufmt/struct.SyntaxError.html#method.locate) error reporting.
 - Exactly one non-std dependency (including transitive dependencies): the venerable [memchr](https://docs.rs.memchr).
 

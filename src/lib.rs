@@ -202,7 +202,9 @@
 //! ## Template overview
 //! When you want to work with a template string, you have essentially three options:
 //!
-//! - [`Template`], [`Oneshot`], and [`TemplateSpans`].
+//! - [`Template`](#template-struct)
+//! - [`Oneshot`](#oneshot-struct)
+//! - [`TemplateSpans`](#templatespans-iterator)
 //!
 //!
 //! ### [`Template`] struct
@@ -212,11 +214,9 @@
 //! You can construct a [`Template`] from a template string using [`Template::compile`], which will
 //! immediately report syntax errors. Then, the [`Template`] struct can be rendered using three methods:
 //!
-//! - [`Template::render`], for convenient rendering directly into a [`String`].
-//! - [`Template::render_io`], when you have a [`io::Write`] buffer and want to avoid an
-//!   allocation.
-//! - [`Template::render_fmt`], when you have a [`fmt::Write`] buffer and want to avoid an
-//!   allocation.
+//! - [`Template::render`], to allocate a new [`String`] with the rendered contents.
+//! - [`Template::render_io`], to write into an [`io::Write`] buffer.
+//! - [`Template::render_fmt`], to write into a [`fmt::Write`] buffer.
 //!
 //! These methods do not consume the template which allows repeated rendering of the same template.
 //! Moreover, since compilation is separate from rendering, you can report errors
@@ -228,26 +228,35 @@
 //! Since a [`Template`] is generic over the text type, some aliases are provided which may be more
 //! convenient:
 //!
-//! - [`BorrowedTemplate`] and [`OwnedTemplate`].
+//! - [`BorrowedTemplate`], with the lifetime of the text tied to the original template string.
+//! - [`OwnedTemplate`], which decouples the lifetime of the text at the cost of additional
+//!   allocations.
 //!
 //! ### [`Oneshot`] struct
 //! If you know you will only render a template exactly once, you can use the [`Oneshot`] struct.
 //! It has similar same rendering methods as a [`Template`]:
 //!
-//! - [`Oneshot::render`], [`Oneshot::render_io`], and [`Oneshot::render_fmt`]
+//! - [`Oneshot::render`], to allocate a new [`String`] with the rendered contents.
+//! - [`Oneshot::render_io`], to write into an [`io::Write`] buffer.
+//! - [`Oneshot::render_fmt`], to write into a [`fmt::Write`] buffer.
 //!
 //! The main gain is that we skip the intermediate compiled representation. This can result in
 //! reduced memory usage if the template is extremely large.
 //!
-//! The main downside is that the error types are more general (returns a global [`Error`], rather
-//! than an error type specialized to the method) and the template cannot be reused.
+//! The main downsides are:
+//!
+//! 1. The error types are more general (returns a global [`Error`], rather
+//! than an error type specialized to the method)
+//! 2. The template cannot be reused.
+//! 3. The lifetime is also tied to the lifetime of the template string.
 //!
 //! It also exposes validation methods to check syntax without rendering the template:
 //!
-//! - [`Oneshot::validate`] and [`Oneshot::validate_any`]
+//! - [`Oneshot::validate`]
+//! - [`Oneshot::validate_any`]
 //!
 //! ### [`TemplateSpans`] iterator
-//! Finally, if you actually want to work with the template directly and are not interested in
+//! Finally, if you want to work with the template directly and are not interested in
 //! rendering, you can use the [`TemplateSpans`] iterator.
 //!
 //! This is an iterator over `Result<Span, SyntaxError>`, where a [`Span`] represents a contiguous
@@ -535,17 +544,17 @@ pub enum Span<T, A> {
 }
 
 impl<T, A> Span<T, A> {
-    /// Returns if this is a [`Text`](Span::Text).
+    /// Returns if this is a text span.
     pub fn is_text(&self) -> bool {
         matches!(self, Self::Text(_))
     }
 
-    /// Returns if this is a [`Expr`](Span::Expr).
+    /// Returns if this is an expression span.
     pub fn is_expr(&self) -> bool {
         matches!(self, Self::Expr(_))
     }
 
-    /// Apply a closure to the text, converting it to a new type.
+    /// Apply a closure to the text variant.
     pub fn map_text<F, U>(self, f: F) -> Span<U, A>
     where
         F: FnOnce(T) -> U,
@@ -556,7 +565,7 @@ impl<T, A> Span<T, A> {
         }
     }
 
-    /// Apply a closure to the expression, converting it to a new type.
+    /// Apply a closure to the expression variant.
     pub fn map_expr<F, B>(self, f: F) -> Span<T, B>
     where
         F: FnOnce(A) -> B,
@@ -568,7 +577,8 @@ impl<T, A> Span<T, A> {
     }
 }
 
-/// A `Span` augumented with the index in the original template string at which the span starts.
+/// A [`Span`] augumented with the index in the original template string at which the span starts.
+/// The offset is only used for error reporting, and it is not preserved in the template itself.
 #[derive(Debug, PartialEq)]
 struct IndexedSpan<'fmt, T> {
     span: Span<T, &'fmt str>,
@@ -594,9 +604,9 @@ impl<'fmt, T, A: Ast<'fmt>> TryFrom<IndexedSpan<'fmt, T>> for Span<T, A> {
     }
 }
 
-/// A dynamically parsed iterator of the [spans](Span) of a template string.
+/// An incrementally parsed iterator of the [spans](Span) of a template string.
 ///
-/// The main way to use a [`TemplateSpans`] is as an iterator of `Result<Span, SyntaxError>`. Construct a
+/// The main way to use [`TemplateSpans`] is as an iterator of `Result<Span, SyntaxError>`. Construct a
 /// [`TemplateSpans`] from a template string using [`TemplateSpans::new`], or from a [`Oneshot`]
 /// using [`Oneshot::spans`].
 ///
@@ -729,11 +739,47 @@ where
     A: Ast<'fmt>,
 {
     /// Initialize from a template string.
+    #[inline]
     pub fn new(s: &'fmt str) -> Self {
         Self {
             inner: Oneshot::new(s),
             _marker: PhantomData,
         }
+    }
+
+    /// Returns the current byte offset inside the template string.
+    ///
+    /// This is the byte position of the next character, or the length of the
+    /// underlying template string if there are no characters remaining.
+    ///
+    /// # Example
+    /// ```
+    /// use mufmt::TemplateSpans;
+    ///
+    /// let template_str = "An}} {expr} or {two}";
+    /// let mut spans_iter = TemplateSpans::<&str>::new(template_str);
+    ///
+    /// // at the beginning
+    /// assert_eq!(spans_iter.offset(), 0);
+    /// assert!(spans_iter.next().is_some());
+    ///
+    /// // right before `}}`
+    /// assert_eq!(spans_iter.offset(), 2);
+    /// assert!(spans_iter.next().is_some());
+    ///
+    /// // right before `{expr}`
+    /// assert_eq!(spans_iter.offset(), 5);
+    /// assert!(spans_iter.next().is_some());
+    /// assert!(spans_iter.next().is_some());
+    /// assert!(spans_iter.next().is_some());
+    ///
+    /// // at the end
+    /// assert_eq!(spans_iter.offset(), template_str.len());
+    /// assert!(spans_iter.next().is_none());
+    /// ```
+    #[inline]
+    pub fn offset(&self) -> usize {
+        self.inner.cursor
     }
 
     /// Returns the part of the template string which has not yet been parsed.
@@ -746,6 +792,17 @@ where
     /// assert!(spans_iter.next().is_some());
     /// assert_eq!(spans_iter.remainder(), "{expr}");
     /// ```
+    /// The remainder can be used to peek if there are any spans remaining without
+    /// consuming the next span.
+    /// ```
+    /// # use mufmt::TemplateSpans;
+    /// let mut spans_iter = TemplateSpans::<char>::new("{a} b{c}}}{{{d} e");
+    /// while !spans_iter.remainder().is_empty() {
+    ///     assert!(spans_iter.next().is_some());
+    /// }
+    /// assert!(spans_iter.next().is_none());
+    /// ```
+    #[inline]
     pub fn remainder(&self) -> &'fmt str {
         self.inner.remainder()
     }
@@ -779,10 +836,16 @@ impl<'fmt, A: Ast<'fmt>> std::iter::FusedIterator for TemplateSpans<'fmt, A> {}
 /// In many cases, you want to use [`Template`] since the additional cost of preparing a
 /// `Template` is relatively minimal (a single [`Vec`] allocation).
 ///
-/// A [`Oneshot`] template provides the same render methods as a [`Template`]: [`Oneshot::render`],
+/// The `'fmt` lifetime is the lifetime of the original template string. Using a [`Template`],
+/// it is possible to decuple the template lifetime from the template string lifetime.
+///
+/// A [`Oneshot`] template provides the same render methods as a [`Template`]: [`Self::render`],
 /// [`Oneshot::render_io`], and [`Oneshot::render_fmt`]. The main difference is that these methods
 /// accept `self` and return a more general [`Error`] type since parsing and rendering occur at the
 /// same time.
+///
+/// A [`Oneshot`] template is also useful for template validation. See the [`validate`](Self::validate)
+/// and [`validate_any`](Self::validate_any) methods.
 ///
 /// ## Examples
 /// Check syntax using [`Oneshot::validate`]:
@@ -803,13 +866,14 @@ impl<'fmt, A: Ast<'fmt>> std::iter::FusedIterator for TemplateSpans<'fmt, A> {}
 pub struct Oneshot<'fmt> {
     // SAFETY: Must be bytes from valid str
     template: &'fmt [u8],
-    // SAFETY: Must be <= template.len(), and correspond to a valid char offset (i.e.
-    // self.template[self.cursor..] must return a valid string
+    // SAFETY: Must be <= template.len() and correspond to a valid char offset (i.e.
+    // self.template[self.cursor..] must return a valid string)
     cursor: usize,
 }
 
 impl<'fmt> Oneshot<'fmt> {
     /// Initialize from a template string.
+    #[inline]
     pub fn new(s: &'fmt str) -> Self {
         Self {
             template: s.as_bytes(),
@@ -848,6 +912,7 @@ impl<'fmt> Oneshot<'fmt> {
     /// assert!(Oneshot::new("Contains an expr: {}").validate::<Infallible>().is_err());
     /// assert!(Oneshot::new("Only text!").validate::<Infallible>().is_ok());
     /// ```
+    #[inline]
     pub fn validate<A>(self) -> Result<(), SyntaxError<A::Error>>
     where
         A: Ast<'fmt>,
@@ -860,6 +925,7 @@ impl<'fmt> Oneshot<'fmt> {
     ///
     /// This is a shorthand for calling [`Oneshot::validate`] with `Ast` type
     /// [`IgnoredAny`](types::IgnoredAny).
+    #[inline]
     pub fn validate_any(self) -> Result<(), SyntaxError<Infallible>> {
         self.validate::<types::IgnoredAny>()
     }
@@ -867,6 +933,7 @@ impl<'fmt> Oneshot<'fmt> {
     /// Returns an iterator over the spans corresponding to the underlying template string.
     ///
     /// See the [`TemplateSpans`] docs for more detail.
+    #[inline]
     pub fn spans<A>(self) -> TemplateSpans<'fmt, A>
     where
         A: Ast<'fmt>,
@@ -958,6 +1025,7 @@ impl<'fmt> Oneshot<'fmt> {
     }
 
     /// The trailing characters which have not yet been parsed.
+    #[inline]
     fn remainder(&self) -> &'fmt str {
         // SAFETY: self.cursor is guaranteed to be a valid char index for the original string which
         // produced self.template
@@ -965,6 +1033,7 @@ impl<'fmt> Oneshot<'fmt> {
     }
 
     /// The size hint implementation.
+    #[inline]
     fn remaining_parts_count(&self) -> (usize, Option<usize>) {
         if self.cursor == self.template.len() {
             (0, Some(0))
@@ -983,6 +1052,7 @@ impl<'fmt> Oneshot<'fmt> {
     /// # Safety
     /// The provided range must be a valid start and end index for the original string from which
     /// self.template was constructed.
+    #[inline]
     unsafe fn get_unchecked(&self, range: std::ops::Range<usize>) -> &'fmt str {
         unsafe { from_utf8_unchecked(self.template.get_unchecked(range)) }
     }
@@ -1239,22 +1309,20 @@ impl<'fmt> Oneshot<'fmt> {
 /// ```
 /// # use mufmt::{Span, Template};
 /// let template = Template::<&str, usize>::compile("Items {1} and {12}").unwrap();
-/// // the implementation of `len` and `nth` efficient
+///
 /// assert_eq!(template.spans().len(), 4);
 /// assert_eq!(template.spans().get(3), Some(&Span::Expr(12)));
 /// ```
-/// Decomposing the template into spans and then reconstruct it.
+/// Decompose the template into spans, apply a transformation, and then reconstruct it.
 /// ```
 /// # use mufmt::{Span, Template};
 /// # let template = Template::<&str, usize>::compile("Items {1} and {12}").unwrap();
 /// let mapped_template: Template<&str, usize> = template
-///     // a template can be converted into an iterator of `Span`s.
+///     // convert into an iterator of `Span`s.
 ///     .into_iter()
-///     .map(|span| match span {
-///         Span::Text(t) => Span::Text(t),
-///         Span::Expr(b) => Span::Expr(b.max(4)),
-///     })
-///     // a template can be constructed from an iterator of `Span`s.
+///     // apply a transformation to each expression
+///     .map(|span| span.map_expr(|b| b.max(4)))
+///     // collect back into a template
 ///     .collect();
 /// assert_eq!(mapped_template.spans().get(1), Some(&Span::Expr(4)));
 /// ```

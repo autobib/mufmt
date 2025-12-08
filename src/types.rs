@@ -61,7 +61,6 @@
 //! assert!(matches!(Result::<u16, <u16 as Ast>::Error>::from_expr("12"), Ok(Ok(_))));
 //! ```
 //!
-//!
 //! ## [`Manifest`](crate::Manifest) implementations.
 //!
 //! Types | Accepted `Ast` | Displays | Render Error
@@ -70,6 +69,7 @@
 //! [`Vec<T>`], [`VecDeque<T>`][V], `&[T]`, `&mut T`, [`[T]`](std::slice), [`[T; N]`](std::array) | `usize` | Value `T` at the index | [`IndexOutOfRange`] if the index is too large
 //! [`[T; N]`](std::array) | [`BoundedInt<N>`] | Value `T` at the index | [`Infallible`][I]
 //! `Fn(&A) -> Result<T, E>` | `A` | `T` | `E`
+//! [`Placeholder<T>`] | Any | Value `T` | [`Infalible`][I]
 //!
 //! [A]: std::sync::Arc
 //! [R]: std::rc::Rc
@@ -86,16 +86,92 @@ mod manifest;
 use std::num::{IntErrorKind, ParseIntError};
 
 pub use ast::{BoundedInt, IgnoredAny};
+pub use manifest::Placeholder;
 
 /// An index is out of range.
+///
+/// This is the error type for the [`Manifest`](crate::Manifest) implementation of container types
+/// like [`Vec`] or slices and array types.
+/// ```
+/// use mufmt::{Template, types::IndexOutOfRange};
+///
+/// let template = Template::<&str, usize>::compile("User {3}").unwrap();
+/// let mut mfst = vec!["Jon", "Thomas"];
+///
+/// // index `3` is out of range
+/// assert_eq!(template.render(&mfst), Err(IndexOutOfRange(3)));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IndexOutOfRange(pub usize);
 
 /// A key is missing.
+///
+/// This is the error type for the [`Manifest`](crate::Manifest) implementation of container types
+/// like [`HashMap`](std::collections::HashMap) and [`BTreeMap`](std::collections::HashMap) when
+/// the template contains a key which does not exist in the database.
+/// ```
+/// use std::collections::HashMap;
+/// use mufmt::{Template, types::KeyMissing};
+///
+/// let template = Template::<&str, &str>::compile("Hello {name}!").unwrap();
+/// let mut mfst: HashMap<&'static str, &'static str> = HashMap::new();
+/// mfst.insert("age", "37");
+///
+/// // the key `name` is missing
+/// assert_eq!(template.render(&mfst), Err(KeyMissing));
+/// ```
+/// The missing key is not reported since it cannot be moved out of the template. If your key
+/// type is `Clone` or `Copy`, you can implement this feature as follows.
+/// ```
+/// use std::{borrow::Borrow, collections::HashMap, hash::Hash, fmt::Display};
+/// use mufmt::{Manifest, Template};
+///
+/// struct Wrapper<K, V> {
+///    inner: HashMap<K, V>
+/// }
+///
+/// #[derive(Debug, PartialEq)]
+/// struct KeyMissing<K>(K);
+///
+/// impl<Q, K, V> Manifest<Q> for Wrapper<K, V>
+/// where
+///     K: Borrow<Q> + Eq + Hash,
+///     Q: Eq + Hash + Clone, // we need `Clone` to move out of the template
+///     V: Display,
+///{
+///    type Error = KeyMissing<Q>;
+///
+///    fn manifest(&self, ast: &Q) -> Result<impl Display, Self::Error> {
+///        self.inner.get(ast).ok_or_else(|| KeyMissing(ast.clone()))
+///    }
+///}
+///
+/// let template = Template::<&str, &str>::compile("Hello {name}!").unwrap();
+/// let mut mfst: Wrapper<&'static str, &'static str> = Wrapper {
+///     inner: HashMap::new(),
+/// };
+/// mfst.inner.insert("age", "37");
+///
+/// // the key `name` is missing
+/// assert_eq!(template.render(&mfst), Err(KeyMissing("name")));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyMissing;
 
 /// An expression was expected to be empty.
+///
+/// This is the error type for the [`Ast`](crate::Ast) implementation of the unit type
+/// `()` which is returned when an expression contains contents.
+/// ```
+/// use mufmt::{Template, SyntaxErrorKind, types::NotEmpty};
+///
+/// assert!(Template::<&str, ()>::compile("User {}").is_ok());
+///
+/// assert_eq!(
+///     Template::<&str, ()>::compile("User {a}").unwrap_err().kind,
+///     SyntaxErrorKind::InvalidExpr(NotEmpty),
+/// );
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotEmpty;
 

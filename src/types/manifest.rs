@@ -11,6 +11,26 @@ use std::{
 use super::{BoundedInt, IndexOutOfRange, KeyMissing};
 use crate::Manifest;
 
+/// A manifest which ignores the contents of the expression and replaces the rendered format with
+/// its own display format.
+/// ```
+/// use mufmt::{Template, types::Placeholder};
+///
+/// let template = Template::<&str, usize>::compile("Hello {0} and {1}").unwrap();
+/// let mut mfst = Placeholder("!");
+///
+/// assert_eq!(template.render(&mfst).unwrap(), "Hello ! and !");
+/// ```
+pub struct Placeholder<T>(pub T);
+
+impl<A, T: Display> Manifest<A> for Placeholder<T> {
+    type Error = Infallible;
+
+    fn manifest(&self, _: &A) -> Result<impl std::fmt::Display, Self::Error> {
+        Ok(&self.0)
+    }
+}
+
 impl<A, F, T: Display, E> Manifest<A> for F
 where
     F: Fn(&A) -> Result<T, E>,
@@ -46,13 +66,13 @@ macro_rules! impl_map_manifest {
                 K: Borrow<Q> + $($bound)*,
                 Q: $($bound)*,
                 V: Display,
-                {
-                    type Error = KeyMissing;
+           {
+               type Error = KeyMissing;
 
-                    fn manifest(&self, ast: &Q) -> Result<impl Display, Self::Error> {
-                        self.get(ast).ok_or(KeyMissing)
-                    }
-                }
+               fn manifest(&self, ast: &Q) -> Result<impl Display, Self::Error> {
+                   self.get(ast).ok_or(KeyMissing)
+               }
+           }
         )*
     };
 }
