@@ -7,10 +7,17 @@ Mufmt is a minimal and extensible runtime formatting library.
 Mufmt allows arbitrary types to define a formatting syntax and compiled template format.
 Mufmt also provides a number of built-in formats, backed by data stored in collection types like `HashMap` or `Vec`.
 
+Key features:
+
+- Separate parsing and interpolation stages, generic over the intermediate representation.
+- Very lightweight: one `Vec` for compiled templates and no allocations for one-off rendering.
+- Span-based error reporting.
+- Exactly one non-std dependency (including transitive dependencies): the venerable [memchr](https://docs.rs.memchr).
+
 Please read the [API docs](https://docs.rs/mufmt/) for more detail.
 
 ## Examples
-Render a template using keys read from a `HashMap`
+Render a template using values in a `HashMap`.
 ```rust
 use mufmt::Template;
 
