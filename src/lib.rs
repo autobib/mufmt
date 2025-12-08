@@ -428,7 +428,7 @@ pub trait ManifestMut<A> {
     /// An error produced while manifesting.
     type Error;
 
-    /// Associated mutable state, which lasts for the duration of a single template.
+    /// Associated mutable state, one per template render call.
     type State<'s>;
 
     /// Initialize mutable state before rendering the template.
