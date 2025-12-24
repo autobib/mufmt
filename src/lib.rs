@@ -246,7 +246,7 @@
 //! The main downsides are:
 //!
 //! 1. The error types are more general (returns a global [`Error`], rather
-//! than an error type specialized to the method)
+//!    than an error type specialized to the method)
 //! 2. The template cannot be reused.
 //! 3. The lifetime is also tied to the lifetime of the template string.
 //!
@@ -1388,6 +1388,11 @@ impl<T, A> Extend<Span<T, A>> for Template<T, A> {
 
 impl<T, A> Template<T, A> {
     /// Compile the provided template string, interpreting the expressions using the `Ast`.
+    ///
+    /// Since text spans need to be contiguous, escaped brackets like `{{` and `}}` may cause
+    /// fragmentation. See the [text breaking rules](TemplateSpans#text-span-breaking)
+    /// for more detail. To obtain a minimal representation which coalesces adjacent text
+    /// spans, see [`OwnedTemplate::compile_compact`].
     #[inline]
     pub fn compile<'fmt>(s: &'fmt str) -> Result<Self, SyntaxError<A::Error>>
     where
@@ -1483,6 +1488,53 @@ impl<T, A> Template<T, A> {
         mfst.finalize_state(state);
 
         Ok(())
+    }
+}
+
+impl<A> Template<Box<str>, A> {
+    /// Compile the provided template string, interpreting the expressions using the `Ast`.
+    ///
+    /// In contrast to [`Template::compile`], this implementation compacts the representation as much as
+    /// possible by combining adjacent text spans. This produces the smallest possible owned
+    /// template.
+    ///
+    /// ## Example
+    /// Text can become fragmented if it contains many `{{` and `}}` escaped brackets. This method
+    /// will combine fragments.
+    /// ```
+    /// use mufmt::{OwnedTemplate, Span};
+    ///
+    /// let template = OwnedTemplate::<usize>::compile_compact("{{a}}b{0}c").unwrap();
+    /// let mut spans = template.spans().iter();
+    /// assert_eq!(spans.next().unwrap(), &Span::Text("{a}b".to_owned().into_boxed_str()));
+    /// assert_eq!(spans.next().unwrap(), &Span::Expr(0));
+    /// assert_eq!(spans.next().unwrap(), &Span::Text("c".to_owned().into_boxed_str()));
+    /// assert!(spans.next().is_none());
+    /// ```
+    #[inline]
+    pub fn compile_compact<'fmt>(s: &'fmt str) -> Result<Self, SyntaxError<A::Error>>
+    where
+        A: Ast<'fmt>,
+    {
+        let mut inner = Vec::new();
+        let mut acc = String::new();
+        for span in TemplateSpans::new(s) {
+            match span? {
+                Span::Text(text) => acc.push_str(text),
+                Span::Expr(ast) => {
+                    if !acc.is_empty() {
+                        inner.push(Span::Text(std::mem::take(&mut acc).into_boxed_str()));
+                    }
+                    inner.push(Span::Expr(ast));
+                }
+            }
+        }
+
+        if !acc.is_empty() {
+            inner.push(Span::Text(acc.into_boxed_str()));
+        }
+
+        Ok(Self { inner })
     }
 }
 
