@@ -16,4 +16,4 @@ quote = "1.0"
 proc-macro2 = "1.0"
 
 [dev-dependencies]
-mufmt = "0.4.4"
+mufmt = "0.5.2"
